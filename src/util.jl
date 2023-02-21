@@ -5,7 +5,6 @@ using POMDPModelTools
 using POMDPTools
 using DroneSurveillance
 using DataFrames, CSV
-using MLJ
 using MLJLinearModels
 
 # task 1
