@@ -1,20 +1,21 @@
-using POMDPs
-using Parameters
-using StaticArrays
-using POMDPModelTools
-using POMDPTools
-using DroneSurveillance
-using DataFrames, CSV
-using MLJLinearModels
-
-# task 1
-mdp = DroneSurveillanceMDP{PerfectCam}();
+import POMDPs: MDP, simulate
+import Parameters
+import StaticArrays
+import POMDPModelTools
+import POMDPTools: HistoryRecorder, RandomPolicy, evaluate
+import DroneSurveillance: DroneSurveillanceMDP, PerfectCam
+import CSV
+using DataFrames
+import MLJLinearModels
 
 # task 2
-history = vcat([ collect(simulate(HistoryRecorder(), mdp, RandomPolicy(mdp)))
-                 for _ in 1:1000 ]...);
+function make_history(mdp::MDP)
+    history = vcat([ collect(simulate(HistoryRecorder(), mdp, RandomPolicy(mdp)))
+                    for _ in 1:1000 ]...);
+    return history
+end
 
-df = begin
+function prep_history(history::Vector, mdp::MDP)
     history = filter(row->row.sp != mdp.terminal_state,  history)
     DataFrame(
         Dict(:ax  => Int[h.s.agent[1] for h in history],
@@ -24,9 +25,6 @@ df = begin
             :ax_ => Int[h.sp.agent[1] for h in history],
             :ay_ => Int[h.sp.agent[2] for h in history]));
 end
-CSV.write("/tmp/data.csv", df)
-
-df = CSV.read("/tmp/data.csv", DataFrame)
 
 function class_to_position_delta(class::Int)
     Dict(
@@ -57,28 +55,34 @@ function position_delta_to_class(delta_x::Int, delta_y::Int)
     )[(delta_x, delta_y)]
 end
 
-df.delta_state_x = df.ax - df.dx
-df.delta_state_y = df.ay - df.dy
-df.label = position_delta_to_class.(df.ax_ - df.ax, df.ay_ - df.ay)
+function run_experiment()
+    # task 1
+    mdp = DroneSurveillanceMDP{PerfectCam}();
+    history = make_history(mdp)
+    df = prep_history(history, mdp)
+    CSV.write("/tmp/data.csv", df)
 
-model = MultinomialRegression(0.1)
-fitresult = MLJLinearModels.fit(model, Float64.(hcat(df.delta_state_x, df.delta_state_y)), df.label)
+    df = CSV.read("/tmp/data.csv", DataFrame)
+    df.delta_state_x = df.ax - df.dx
+    df.delta_state_y = df.ay - df.dy
+    df.label = position_delta_to_class.(df.ax_ - df.ax, df.ay_ - df.ay)
+
+    model = MLJLinearModels.MultinomialRegression(0.1)
+    fitresult = MLJLinearModels.fit(model, Float64.(hcat(df.delta_state_x, df.delta_state_y)), df.label)
+
+    # task 4
+    initial_state = DSState([1, 1], [5, 1])
+    policy = RandomPolicy(mdp)
+    policy_value = evaluate(mdp, policy)(initial_state)
+
+    # task 5
+    policy_values = [evaluate(mdp, policy)(initial_state) 
+                    for _ in 1:1000]
+    UnicodePlots.boxplot(policy_values)
+end
+
 function pred(model, state, params)
     W = reshape(params, 2+1, 5)
     x = vcat(state, 1)
     return MLJLinearModels.softmax(x'*W)
 end
-# model = glm(@formula(label ~ 0 + delta_state_x + delta_state_y), df, Poisson(),
-#             contrasts = Dict(:label => DummyCoding()))
-
-
-# task 4
-initial_state = DSState([1, 1], [5, 1])
-policy = RandomPolicy(mdp)
-policy_value = evaluate(mdp, policy)(initial_state)
-
-# task 5
-using UnicodePlots
-policy_values = [evaluate(mdp, policy)(initial_state) 
-                 for _ in 1:1000]
-UnicodePlots.boxplot(policy_values)
