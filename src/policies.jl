@@ -22,11 +22,18 @@ make_𝒫() = MDPProblem(
     DroneSurveillance.ACTION_DIRS
 )
 
-struct RolloutLookahead 
+struct RolloutLookahead
     𝒫 # problem
     π_inner # rollout policy
     d # depth
 end 
+struct RolloutLookahead_  <: POMDPs.Policy
+    𝒫 # problem
+    π_inner # rollout policy
+    d # depth
+end 
+
+action(rollout_obj::RolloutLookahead_, s) = rollout_obj(s)
 
 function rollout(𝒫::MDPProblem, s::DSState, π::Policy, d::Int)
     ret = 0.0 
@@ -40,6 +47,10 @@ function rollout(𝒫::MDPProblem, s::DSState, π::Policy, d::Int)
 end 
     
 function (π_rollout::RolloutLookahead)(s) 
+    U(s) = rollout(π_rollout.𝒫, s, π_rollout.π_inner, π_rollout.d)
+    return greedy(π_rollout.𝒫, U, s).a
+end
+function (π_rollout::RolloutLookahead_)(s) 
     U(s) = rollout(π_rollout.𝒫, s, π_rollout.π_inner, π_rollout.d) 
     return greedy(π_rollout.𝒫, U, s).a 
 end
