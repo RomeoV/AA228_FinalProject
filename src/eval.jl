@@ -1,41 +1,47 @@
+import FLoops: @floop
 import Random: seed!
 import DroneSurveillance: ACTION_DIRS
 import POMDPTools.POMDPDistributions: weighted_iterator
 # function eval_problem(nx::Int, agent_strategy::DSAgentStrategy, transition_model::DSTransitionModel; seed_val=rand(Int))
-function eval_problem(nx::Int, agent_strategy::Any, transition_model::Any; seed_val=rand(UInt))
+function eval_problem(nx::Int, agent_strategy_p::Float64, transition_model::Any; seed_val=rand(UInt))
     seed!(seed_val)
-    mdp = DroneSurveillanceMDP{PerfectCam}();
-    mdp.size = (nx, nx)
-    mdp.agent_strategy = DSAgentStrat(0.5)
-    mdp.transition_model = DSPerfectModel()
+    P = make_P()
+    P.mdp.size = (nx, nx)
+    P.mdp.agent_strategy = DSAgentStrat(agent_strategy_p)
+    P.mdp.transition_model = DSPerfectModel()
 
-    policy = RandomPolicy(mdp)
-    initial_state = DSState([1, 1], rand(2:nx, 2))
-    policy_value = value_iteration(mdp, policy)[initial_state]
+    # policy = RandomPolicy(mdp)
+    policy = RolloutLookahead(P, RandomPolicy(P.mdp), 2)
+    initial_state = DSState([1, 1], rand(3:nx, 2))
+    policy_value = value_iteration(P.mdp, policy; trace_state=initial_state)[initial_state]
     return policy_value
 end
 
-function value_iteration(mdp::DroneSurveillanceMDP, policy::Policy)
+function value_iteration(mdp::DroneSurveillanceMDP, policy::Policy;
+                         trace_state::Union{Nothing, DSState}=nothing)
     nx, ny = mdp.size
     γ = mdp.discount_factor
-    states = [DSState([qx, qy], [ax, ay]) for qx in 1:nx, qy in 1:ny, ax in 1:nx, ay in 1:ny][:]
-    push!(states, mdp.terminal_state)
+    nonterminal_states = [DSState([qx, qy], [ax, ay])
+                          for qx in 1:nx,
+                              qy in 1:ny,
+                              ax in 1:nx,
+                              ay in 1:ny][:]  # note that we flatten the array in the end
 
-    U = Dict(s=>rand() for s in states)
+    U = Dict(s=>rand() for s in nonterminal_states)
+    U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
     for i in 1:100
-        for s in states
-            if isterminal(mdp, s)
-               U[s] = reward(mdp, s, rand(ACTION_DIRS))
-               @assert !isnan(U[s])
-            else
-                U_ = Dict(
-                    a => (reward(mdp, s, a) + γ * sum(p*U[s_] for (s_, p) in weighted_iterator(transition(mdp, s, a))))
-                    for a in ACTION_DIRS
-                )
-              U[s] = maximum(values(U_))
-              @assert !isnan(U[s])
+        # I benchmarked these (cache misses?) but they're about the same.
+        # So we use the Gauss-Seidl version, which should converge faster.
+        U_ = U  # Alternative: U_ = copy(U)
+        @floop for s in nonterminal_states
+            U[s] = let a = policy(s),
+                       r = reward(mdp, s, a),
+                       T_probs = transition(mdp, s, a, mdp.agent_strategy, DSPerfectModel()),
+                       T_probs_iter = weighted_iterator(T_probs)
+                r + γ * sum(p*U_[s_] for (s_, p) in T_probs_iter)
             end
         end
+        !isnothing(trace_state) && @info U[trace_state]
     end
     return U
 end
