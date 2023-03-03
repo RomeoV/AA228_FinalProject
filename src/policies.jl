@@ -7,66 +7,57 @@ import DroneSurveillance: DroneSurveillanceMDP, PerfectCam, DSState
 struct MDPProblem
     mdp :: MDP
     γ :: Float64 # discount factor 
-    𝒮 # state space
-    𝒜 # action space 
+    P # state space
+    A # action space
     # these functions are defined through multiple dispatch on the type
     # T # transition function
     # R # reward function
     # TR # sample transition and reward
 end
 
-make_𝒫() = MDPProblem(
+make_P() = MDPProblem(
     DroneSurveillanceMDP{PerfectCam}(),
     0.9,
     [],  # <- put an implicit definition of all the states here?
     DroneSurveillance.ACTION_DIRS
 )
 
-struct RolloutLookahead
-    𝒫 # problem
-    π_inner # rollout policy
-    d # depth
-end 
-struct RolloutLookahead_  <: POMDPs.Policy
-    𝒫 # problem
+struct RolloutLookahead <: POMDPs.Policy
+    P # problem
     π_inner # rollout policy
     d # depth
 end 
 
-action(rollout_obj::RolloutLookahead_, s) = rollout_obj(s)
+action(rollout_obj::RolloutLookahead, s) = rollout_obj(s)
 
-function rollout(𝒫::MDPProblem, s::DSState, π::Policy, d::Int)
+function rollout(P::MDPProblem, s::DSState, π::Policy, d::Int)
     ret = 0.0 
     for t in 1:d
         a = action(π, s)
-        s = rand(transition(𝒫.mdp, s, a))
-        r = reward(𝒫.mdp, s, a)
-        ret += 𝒫.γ^(t-1) * r
+        s = rand(transition(P.mdp, s, a))
+        r = reward(P.mdp, s, a)
+        ret += P.γ^(t-1) * r
     end
     return ret
 end 
     
 function (π_rollout::RolloutLookahead)(s) 
-    U(s) = rollout(π_rollout.𝒫, s, π_rollout.π_inner, π_rollout.d)
-    return greedy(π_rollout.𝒫, U, s).a
-end
-function (π_rollout::RolloutLookahead_)(s) 
-    U(s) = rollout(π_rollout.𝒫, s, π_rollout.π_inner, π_rollout.d) 
-    return greedy(π_rollout.𝒫, U, s).a 
+    U(s) = rollout(π_rollout.P, s, π_rollout.π_inner, π_rollout.d)
+    return greedy(π_rollout.P, U, s).a
 end
 
-function greedy(𝒫::MDPProblem, U, s) 
-    u, a = findmax(a->lookahead(𝒫, U, s, a), 𝒫.𝒜)
+function greedy(P::MDPProblem, U, s)
+    u, a = findmax(a->lookahead(P, U, s, a), P.A)
     return (a=a, u=u) 
 end
 
-function lookahead(𝒫::MDPProblem, U::Function, s::DSState, a)
+function lookahead(P::MDPProblem, U::Function, s::DSState, a)
     # here we can use the probabilistic future states as predicted by our model
     #                          vvv
-    T_probs, T_vals = let T = transition(𝒫.mdp, s, a)
+    T_probs, T_vals = let T = transition(P.mdp, s, a)
         T.probs, T.vals
     end
-    return reward(𝒫.mdp, s,a) + 𝒫.γ*sum(p*U(s) for (p, s) in zip(T_probs, T_vals))
+    return reward(P.mdp, s,a) + P.γ*sum(p*U(s) for (p, s) in zip(T_probs, T_vals))
 end
 
 # struct FakeDroneSurveillanceMDP <: DroneSurveillance
