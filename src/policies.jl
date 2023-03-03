@@ -31,11 +31,11 @@ end
 action(rollout_obj::RolloutLookahead, s) = rollout_obj(s)
 
 function rollout(P::MDPProblem, s::DSState, π::Policy, d::Int)
-    ret = 0.0 
+    ret = 0.0
     for t in 1:d
-        a = action(π, s)
-        s = rand(transition(P.mdp, s, a))
-        r = reward(P.mdp, s, a)
+        a::DSPos   = action(π, s)
+        s::DSState = rand(transition(P.mdp, s, a))
+        r::Float64 = reward(P.mdp, s, a)
         ret += P.γ^(t-1) * r
     end
     return ret
@@ -47,17 +47,15 @@ function (π_rollout::RolloutLookahead)(s)
 end
 
 function greedy(P::MDPProblem, U, s)
-    u, a = findmax(a->lookahead(P, U, s, a), P.A)
-    return (a=a, u=u) 
+    u, a_idx = findmax(a->lookahead(P, U, s, a), P.A)
+    return (a=P.A[a_idx], u=u)
 end
 
-function lookahead(P::MDPProblem, U::Function, s::DSState, a)
+function lookahead(P::MDPProblem, U::Function, s::DSState, a::DSPos)
     # here we can use the probabilistic future states as predicted by our model
     #                          vvv
-    T_probs, T_vals = let T = transition(P.mdp, s, a)
-        T.probs, T.vals
-    end
-    return reward(P.mdp, s,a) + P.γ*sum(p*U(s) for (p, s) in zip(T_probs, T_vals))
+    T_probs = weighted_iterator(transition(P.mdp, s, a))
+    return reward(P.mdp, s, a) + P.γ*sum(p*U(s) for (s, p) in T_probs)
 end
 
 # struct FakeDroneSurveillanceMDP <: DroneSurveillance

@@ -8,5 +8,6 @@ include("eval.jl")
 export make_DroneSurveillance_MDP, run_experiment
 export MDPProblem
 export DSAgentStrat, DSTransitionModel, DSPerfectModel, DSApproximateModel
+export make_P
 
 end # module AA228_FinalProject
