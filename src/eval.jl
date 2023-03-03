@@ -8,7 +8,7 @@ function eval_problem(nx::Int, agent_strategy_p::Float64, transition_model::Any;
     P = make_P()
     P.mdp.size = (nx, nx)
     P.mdp.agent_strategy = DSAgentStrat(agent_strategy_p)
-    P.mdp.transition_model = DSPerfectModel()
+    P.mdp.transition_model = DSPerfectModel()  # probably we can remove this from MDP?
 
     # policy = RandomPolicy(mdp)
     policy = RolloutLookahead(P, RandomPolicy(P.mdp), 2)
@@ -36,7 +36,8 @@ function value_iteration(mdp::DroneSurveillanceMDP, policy::Policy;
         @floop for s in nonterminal_states
             U[s] = let a = policy(s),
                        r = reward(mdp, s, a),
-                       T_probs = transition(mdp, s, a, mdp.agent_strategy, DSPerfectModel()),
+                       # note that we use the true transition model here!
+                       T_probs = DroneSurveillance.transition(mdp, mdp.agent_strategy, DSPerfectModel(), s, a),
                        T_probs_iter = weighted_iterator(T_probs)
                 r + γ * sum(p*U_[s_] for (s_, p) in T_probs_iter)
             end
