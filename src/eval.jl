@@ -60,7 +60,8 @@ function value_iteration(mdp::DroneSurveillanceMDP;
 
     U = Dict(s=>rand() for s in nonterminal_states)
     U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
-    for i in 1:1000
+    for i in 1:100
+        @show i
         # I benchmarked these (cache misses?) but they're about the same.
         # So we use the Gauss-Seidl version, which should converge faster.
         # U_ = U  # Alternative:
