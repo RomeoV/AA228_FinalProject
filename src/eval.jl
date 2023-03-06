@@ -1,7 +1,8 @@
 import FLoops: @floop
 import Random: seed!
-import DroneSurveillance: ACTION_DIRS
-import POMDPTools.POMDPDistributions: weighted_iterator
+import DroneSurveillance: ACTION_DIRS, DSAgentStrat, DSPerfectModel
+import POMDPTools
+import POMDPTools: weighted_iterator
 # function eval_problem(nx::Int, agent_strategy::DSAgentStrategy, transition_model::DSTransitionModel; seed_val=rand(Int))
 function eval_problem(nx::Int, agent_strategy_p::Float64, transition_model::Symbol;
                       seed_val=rand(UInt), verbose=false, dry=false)
@@ -27,23 +28,23 @@ function eval_problem(nx::Int, agent_strategy_p::Float64, transition_model::Symb
 end
 
 function policy_evaluation(mdp::DroneSurveillanceMDP, policy::Policy;
-                         trace_state::Union{Nothing, DSState}=nothing)
+                           trace_state::Union{Nothing, DSState}=nothing, dry=false)
     nx, ny = mdp.size
     γ = mdp.discount_factor
     nonterminal_states = [DSState([qx, qy], [ax, ay])
                           for qx in 1:nx,
                               qy in 1:ny,
                               ax in 1:nx,
-                              ay in 1:ny][:]  # note that we flatten the array in the end
+                              ay in 1:ny][:]  # <- we flatten here!
 
     U = Dict(s=>rand() for s in nonterminal_states)
     U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
-    for i in 1:100
+    for i in 1:(dry ? 5 : 50)
         # I benchmarked these (cache misses?) but they're about the same.
         # So we use the Gauss-Seidl version, which should converge faster.
         U_ = U  # Alternative: U_ = copy(U)
-        @floop for s in nonterminal_states
-            U[s] = let a = policy(s),
+        for s in nonterminal_states
+            U[s] = let a = action(policy, s),
                        r = reward(mdp, s, a),
                        # note that we use the true transition model here!
                        T_probs = DroneSurveillance.transition(mdp, mdp.agent_strategy, DSPerfectModel(), s, a),
@@ -58,7 +59,8 @@ end
 
 
 function value_iteration(mdp::DroneSurveillanceMDP;
-                         trace_state::Union{Nothing, DSState}=nothing)
+                         trace_state::Union{Nothing, DSState}=nothing,
+                         dry=false)
     nx, ny = mdp.size
     γ = mdp.discount_factor
     nonterminal_states = [DSState([qx, qy], [ax, ay])
@@ -69,12 +71,10 @@ function value_iteration(mdp::DroneSurveillanceMDP;
 
     U = Dict(s=>rand() for s in nonterminal_states)
     U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
-    for i in 1:100
-        @show i
+    for i in 1:(dry ? 5 : 50)
         # I benchmarked these (cache misses?) but they're about the same.
         # So we use the Gauss-Seidl version, which should converge faster.
-        # U_ = U  # Alternative:
-        U_ = copy(U)
+        U_ = U  # Alternative: U_ = copy(U)
         @floop for s in nonterminal_states
             U[s] = maximum(
                      a -> let r = reward(mdp, s, a),
@@ -93,10 +93,10 @@ end
 function runtime_policy(mdp, U, s)
     γ = mdp.discount_factor
     U_a = Dict(
-        a=>let r = reward(mdp, s, a),
-            # note that we use the true transition model here!
-            T_probs = DroneSurveillance.transition(mdp, mdp.agent_strategy, DSPerfectModel(), s, a),
-            T_probs_iter = weighted_iterator(T_probs)
+        a => let r = reward(mdp, s, a),
+                 # note that we use the true transition model here!
+                 T_probs = DroneSurveillance.transition(mdp, mdp.agent_strategy, DSPerfectModel(), s, a),
+                 T_probs_iter = weighted_iterator(T_probs)
             r + γ * sum(p*U[s_] for (s_, p) in T_probs_iter)
         end
         for a in ACTION_DIRS
