@@ -3,17 +3,26 @@ import Random: seed!
 import DroneSurveillance: ACTION_DIRS
 import POMDPTools.POMDPDistributions: weighted_iterator
 # function eval_problem(nx::Int, agent_strategy::DSAgentStrategy, transition_model::DSTransitionModel; seed_val=rand(Int))
-function eval_problem(nx::Int, agent_strategy_p::Float64, transition_model::Any; seed_val=rand(UInt))
+function eval_problem(nx::Int, agent_strategy_p::Float64, transition_model::Symbol;
+                      seed_val=rand(UInt), verbose=false, dry=false)
     seed!(seed_val)
     P = make_P()
     P.mdp.size = (nx, nx)
     P.mdp.agent_strategy = DSAgentStrat(agent_strategy_p)
     P.mdp.transition_model = DSPerfectModel()  # probably we can remove this from MDP?
 
-    # policy = RandomPolicy(mdp)
-    policy = RolloutLookahead(P, RandomPolicy(P.mdp), 2)
+    policy = if transition_model == :perfect
+        U = value_iteration(P.mdp; dry=dry);
+        POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
+    elseif transition_model == :random
+        RandomPolicy(P.mdp)
+    end
+    # policy = RolloutLookahead(P, RandomPolicy(P.mdp), 2)
     initial_state = DSState([1, 1], rand(3:nx, 2))
-    policy_value = value_iteration(P.mdp, policy; trace_state=initial_state)[initial_state]
+    U_π = policy_evaluation(P.mdp, policy;
+                            trace_state=(verbose ? initial_state : nothing),
+                            dry=dry)
+    policy_value = U_π[initial_state]
     return policy_value
 end
 
