@@ -1,18 +1,13 @@
-import POMDPs: MDP, Policy, action, transition
-using POMDPs
-using DroneSurveillance
+import POMDPs: MDP, Policy, action, transition, reward
+import POMDPTools: weighted_iterator
 import DroneSurveillance
 import DroneSurveillance: DroneSurveillanceMDP, PerfectCam, DSState
 
 struct MDPProblem
     mdp :: MDP
     γ :: Float64 # discount factor 
-    P # state space
+    S # state space
     A # action space
-    # these functions are defined through multiple dispatch on the type
-    # T # transition function
-    # R # reward function
-    # TR # sample transition and reward
 end
 
 make_P() = MDPProblem(
@@ -22,7 +17,7 @@ make_P() = MDPProblem(
     DroneSurveillance.ACTION_DIRS
 )
 
-struct RolloutLookahead <: POMDPs.Policy
+struct RolloutLookahead <: Policy
     P # problem
     π_inner # rollout policy
     d # depth
@@ -40,7 +35,7 @@ function rollout(P::MDPProblem, s::DSState, π::Policy, d::Int)
     end
     return ret
 end 
-    
+
 function (π_rollout::RolloutLookahead)(s) 
     U(s) = rollout(π_rollout.P, s, π_rollout.π_inner, π_rollout.d)
     return greedy(π_rollout.P, U, s).a
@@ -52,37 +47,6 @@ function greedy(P::MDPProblem, U, s)
 end
 
 function lookahead(P::MDPProblem, U::Function, s::DSState, a::DSPos)
-    # here we can use the probabilistic future states as predicted by our model
-    #                          vvv
     T_probs = weighted_iterator(transition(P.mdp, s, a))
     return reward(P.mdp, s, a) + P.γ*sum(p*U(s) for (s, p) in T_probs)
 end
-
-# struct FakeDroneSurveillanceMDP <: DroneSurveillance
-#     transition_params
-# end
-
-# function transition(mdp::FakeDroneSurveillanceMDP, s, a)
-#     if isterminal(mdp, s) || s.quad == s.agent
-#         return Deterministic(mdp.terminal_state) # the function is not type stable, returns either Deterministic or SparseCat
-#     end
-
-#     # move quad
-#     # if it would move out of bounds, just stay in place
-#     actor_inbounds(actor_state) = (0 < actor_state[1] <= mdp.size[1]) && (0 < actor_state[2] <= mdp.size[2])
-#     new_quad = actor_inbounds(s.quad + ACTION_DIRS[a]) ? s.quad + ACTION_DIRS[a] : s.quad
-
-#     # move agent
-#     delta_state = s.agent - s.drone
-#     relative_new_state_probabilities = pred(model, delta_state, mdp.transition_params)
-#     agent_delta = sample(1:5, Weights(relative_new_state_probabilities)) |> class_to_position_delta
-#     new_agent_position = agent_inbounds(s.agent + agent_delta) ? s.agent+agent_delta : s.agent
-
-#     return Deterministic(DSState(new_agent_position, new_quad))
-# end
-
-# function lookahead(mdp::FakeDroneSurveillanceMDP, U, s, a)
-#     # here we can use the probabilistic future states as predicted by our model
-#     #                          vvv
-#     return R(mdp, s,a) + γ*sum(T(mdp, s,a,s′)*U(s′) for s′ in mdp) 
-# end
