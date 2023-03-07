@@ -15,6 +15,11 @@ function eval_problem(nx::Int, agent_strategy_p::Real, transition_model::Symbol;
     policy = if transition_model == :perfect
         U = value_iteration(P.mdp; dry=dry);
         POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
+    elseif transition_model == :linear
+        T_model::DSLinModel = create_linear_transition_model(P.mdp)
+        P.mdp.transition_model = T_model
+        U = value_iteration(P.mdp; dry=dry);
+        POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
     elseif transition_model == :random
         RandomPolicy(P.mdp)
     end
