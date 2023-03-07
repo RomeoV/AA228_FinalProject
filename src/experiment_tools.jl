@@ -15,7 +15,7 @@ function run_experiments(; dry=false, outpath::Union{String, Nothing}=nothing)
     # agent_aggressiveness_vals = [0., 0.5, 1.0]
 
     seed_vals = rand(UInt, 7)
-    policy_strat_vals = [:perfect, :random]
+    policy_strat_vals = [:perfect, :random, :linear]
 
     df = DataFrame([Int[], Float64[], UInt[], Symbol[], Float64[]],
                    [:nx, :agent_aggressiveness_p, :seed_val, :policy_strat, :score],
@@ -40,16 +40,18 @@ function run_experiments(; dry=false, outpath::Union{String, Nothing}=nothing)
 end
 
 function plot_results(df::DataFrame)
+    n_plots = length(unique(df.policy_strat))
+    seriescolors = 1:n_plots |> x->reshape(x, 1, :) |> collect
     plt = @df df plot(:agent_aggressiveness_p, :score_mean;
                       group=:policy_strat, ribbon=2*:score_std, fillalpha=0.25,
-                      label=nothing, seriescolor=[1 ;; 2],
+                      label=nothing, seriescolor=seriescolors,
                       title="Reward vs agent agressiveness",
                       xlabel="Agent perfect step prob",
                       ylabel="Reward",
                       leg_title=L"$T$ model")
     @df df plot!(plt, :agent_aggressiveness_p, :score_mean;
                       group=:policy_strat, ribbon=:score_std, fillalpha=0.5,
-                      seriescolor=[1 ;; 2])
+                      seriescolor=seriescolors)
     return plt
 end
 
