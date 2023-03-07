@@ -6,12 +6,12 @@ import CSV
 import StatsBase: mean, std
 import FLoops: @floop, @reduce
 import LaTeXStrings: @L_str
-import Plots: plot, plot!, pgfplotsx; pgfplotsx()
+import Plots: plot, plot!, pgfplotsx; # pgfplotsx()
 import StatsPlots: @df
 
 function run_experiments(; dry=false, outpath::Union{String, Nothing}=nothing)
     nx_vals = [10]  # ny is the same
-    agent_aggressiveness_vals = LinRange(0, 1, 7)
+    agent_aggressiveness_vals = LinRange(0//1, 1//1, 7)
     # agent_aggressiveness_vals = [0., 0.5, 1.0]
 
     seed_vals = rand(UInt, 7)

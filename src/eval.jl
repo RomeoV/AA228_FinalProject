@@ -4,7 +4,7 @@ import DroneSurveillance: ACTION_DIRS, DSAgentStrat, DSPerfectModel
 import POMDPTools
 import POMDPTools: weighted_iterator
 # function eval_problem(nx::Int, agent_strategy::DSAgentStrategy, transition_model::DSTransitionModel; seed_val=rand(Int))
-function eval_problem(nx::Int, agent_strategy_p::Float64, transition_model::Symbol;
+function eval_problem(nx::Int, agent_strategy_p::Real, transition_model::Symbol;
                       seed_val=rand(UInt), verbose=false, dry=false)
     seed!(seed_val)
     P = make_P()
