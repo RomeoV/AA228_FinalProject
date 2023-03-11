@@ -16,6 +16,7 @@ function run_experiments(; dry=false, outpath::Union{String, Nothing}=nothing)
 
     seed_vals = rand(UInt, 7)
     policy_strat_vals = [:perfect, :random, :linear]
+    policy_strat_vals = [:conformalized, :linear, :perfect, :random]
 
     df = DataFrame([Int[], Float64[], UInt[], Symbol[], Float64[]],
                    [:nx, :agent_aggressiveness_p, :seed_val, :policy_strat, :score],
