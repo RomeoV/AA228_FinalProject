@@ -6,6 +6,7 @@ include("policies.jl")
 include("eval.jl")
 include("experiment_tools.jl")
 include("data_driven_policy.jl")
+include("conformal_prediction.jl")
 
 export make_DroneSurveillance_MDP
 export MDPProblem
