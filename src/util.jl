@@ -55,7 +55,7 @@ function position_delta_to_class(delta_x::Int, delta_y::Int)
     )[(delta_x, delta_y)]
 end
 
-function run_experiment()
+function _run_experiment()
     # task 1
     mdp = DroneSurveillanceMDP{PerfectCam}();
     history = make_history(mdp)

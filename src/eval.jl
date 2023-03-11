@@ -20,8 +20,18 @@ function eval_problem(nx::Int, agent_strategy_p::Real, transition_model::Symbol;
         P.mdp.transition_model = T_model
         U = value_iteration(P.mdp; dry=dry);
         POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
+    elseif transition_model == :conformalized
+        T_model_::DSLinModel = create_linear_transition_model(P.mdp)
+        λs::Array = 0.1:0.1:0.9; append!(λs, [0.99, 0.995])
+        λs_hat_Δx, λs_hat_Δy = conformalize_λs(P.mdp, T_model_, 1000, λs)
+        conf_model = DSConformalizedModel(T_model_, Dict(zip(λs, λs_hat_Δx)), Dict(zip(λs, λs_hat_Δy)))
+        P.mdp.transition_model = conf_model
+        U = value_iteration_conformal(P.mdp; dry=dry);
+        POMDPTools.FunctionPolicy(s->runtime_policy_conformal(P.mdp, U, s));
     elseif transition_model == :random
         RandomPolicy(P.mdp)
+    else
+        @assert "error"
     end
     # policy = RolloutLookahead(P, RandomPolicy(P.mdp), 2)
     initial_state = DSState([1, 1], rand(3:nx, 2))
