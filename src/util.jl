@@ -9,9 +9,9 @@ using DataFrames
 import MLJLinearModels
 
 # task 2
-function make_history(mdp::MDP)
+function make_history(mdp::MDP; N=1000)
     history = vcat([ collect(simulate(HistoryRecorder(), mdp, RandomPolicy(mdp)))
-                    for _ in 1:1000 ]...);
+                    for _ in 1:N ]...);
     return history
 end
 

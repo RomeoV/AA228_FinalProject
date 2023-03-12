@@ -1,6 +1,5 @@
 using DataFrames
 using DroneSurveillance
-# using StatsPlots
 import POMDPTools
 import CSV
 import Base: product
@@ -9,6 +8,7 @@ import FLoops: @floop, @reduce
 import LaTeXStrings: @L_str
 import Plots: plot, plot!, pgfplotsx; # pgfplotsx()
 import StatsPlots: @df
+import Random: shuffle
 
 function run_experiments(; dry=false, outpath::Union{String, Nothing}=nothing)
     nx_vals = [10]  # ny is the same
@@ -43,16 +43,20 @@ end
 function get_conformalized_policy_under_domain_shift(P, Δp; p0=0.5, dry=false)
     P.mdp.transition_model = DSPerfectModel()
     P.mdp.agent_strategy = DSAgentStrat(p0)
-    T_model_::DSLinModel = create_linear_transition_model(P.mdp)
-    P.mdp.agent_strategy = DSAgentStrat(p0+Δp)
-    λs::Array = 0.1:0.1:0.9
-    λs_hat_Δx, λs_hat_Δy = conformalize_λs(P.mdp, T_model_, 100, λs)
-    conf_model = DSConformalizedModel(T_model_, Dict(zip(λs, λs_hat_Δx)), Dict(zip(λs, λs_hat_Δy)))
+    mdp = P.mdp
+    mdp_shift = let mdp = deepcopy(mdp)
+        mdp.agent_strategy = DSAgentStrat(p0 + Δp)
+        mdp
+    end
+    conf_model = create_conformalized_transition_model(mdp, mdp_shift)
+
     P.mdp.transition_model = conf_model
     U = value_iteration_conformal(P.mdp; dry=dry);
     POMDPTools.FunctionPolicy(s->runtime_policy_conformal(P.mdp, U, s));
 end
+
 function get_linear_policy_under_domain_shift(P, Δp; p0=0.5, dry=false)
+    # currently ignores the domain shift
     P.mdp.transition_model = DSPerfectModel()
     P.mdp.agent_strategy = DSAgentStrat(p0)
     T_model::DSLinModel = create_linear_transition_model(P.mdp)
@@ -147,4 +151,38 @@ function process_data(path::String, outpath::String)
     rename!(s->replace(s, "_"=>" "), df)
     CSV.write(outpath, df)
     df
+end
+
+function run_calibration_experiments(Δp; p0=0.5, dry=false)
+    mdp = DroneSurveillanceMDP{PerfectCam}(size=(10, 10), agent_strategy=DSAgentStrat(p0))
+    mdp_shift = let mdp = deepcopy(mdp)
+        mdp.agent_strategy = DSAgentStrat(p0 + Δp)
+        mdp
+    end
+    @assert mdp.agent_strategy.p == p0  # make sure original mdp is not modified
+
+    lin_model  = create_linear_transition_model(mdp; dry=dry)
+    conf_model = create_conformalized_transition_model(mdp, mdp_shift; dry=dry)
+
+    history = make_history(mdp_shift; N=(dry ? 10 : 1000)) |> shuffle
+    lin_results  = measure_calibration(lin_model,  history)
+    conf_results = measure_calibration(conf_model, history)
+
+    n_lin = length(lin_results); n_conf = length(con_results)
+
+    DataFrame([vcat(keys(lin_results)...,    keys(conf_results)...),
+               vcat(values(lin_results)...,  values(conf_results)...),
+               vcat(fill(:linear, n_lin)..., fill(:conformalized, n_conf)...)],
+              [:λ, :calib_val, :model])
+end
+
+function plot_calibration_experiments(df; kwargs...)
+    plt = plot(0:0.01:1, 0:0.01:1;
+               linestyle=:dash,
+               label="Perfect model",
+               xlabel="λ",
+               ylabel="coverage",
+               kwargs...)
+    @df df plot!(plt, :λ, :calib_val; group=:model);
+    plt
 end

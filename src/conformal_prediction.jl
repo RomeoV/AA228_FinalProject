@@ -57,13 +57,17 @@ function conformalize_λs(mdp, T_model, n_calib, λs)::Tuple{Array{<:Real}, Arra
     return (λs_hat[1], λs_hat[2])
 end
 
-function create_conf_model_test()
-    T_model = create_linear_transition_model(mdp)
+function create_conformalized_transition_model(mdp_base, mdp_calib; dry=false)
+    T_model = create_linear_transition_model(mdp_base; dry=dry)
     λs::Array = 0.1:0.1:0.9; append!(λs, [0.99, 0.995])
-    λs_hat_Δx, λs_hat_Δy = conformalize_λs(mdp, T_model, 1000, λs)
-    conf_model = DSConformalizedModel(T_model, Dict(zip(λs, λs_hat_Δx)), Dict(zip(λs, λs_hat_Δy)))
+    λs_hat_Δx, λs_hat_Δy = conformalize_λs(mdp_calib, T_model, 1000, λs)
+    conf_model = DSConformalizedModel(T_model,
+                                      Dict(zip(λs, λs_hat_Δx)),  # λ̂ for Δx
+                                      Dict(zip(λs, λs_hat_Δy)))  # λ̂ for Δy
     return conf_model
 end
+create_conformalized_transition_model(mdp; dry=false) =
+    create_conformalized_transition_model(mdp, mdp; dry=dry)
 
 function predict_with_conf_model_test()
     # predict(conf_model, DSState(rand(1:nx, 2), rand(1:nx, 2)), DSPos([0, 1]), 0.3)

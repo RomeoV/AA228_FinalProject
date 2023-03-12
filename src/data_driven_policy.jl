@@ -4,7 +4,7 @@ import POMDPs: simulate
 import LinearAlgebra: normalize!
 import MLJLinearModels: MultinomialClassifier, glr, fit
 
-function create_linear_transition_model(mdp::MDP)::DSLinModel
+function create_linear_transition_model(mdp::MDP; dry=false)::DSLinModel
     # mdp = DroneSurveillanceMDP{PerfectCam}(size=(10, 10), agent_strategy=DSAgentStrat(0.5))
     nx, ny = mdp.size
     b0 = begin
@@ -22,7 +22,7 @@ function create_linear_transition_model(mdp::MDP)::DSLinModel
         SparseCat(states, probs)
     end
     history = vcat([ collect(simulate(HistoryRecorder(), mdp, RandomPolicy(mdp), rand(b0)))
-                    for _ in 1:1000 ]...);
+                    for _ in 1:(dry ? 10 : 1000) ]...);
     ξs = vcat(process_row.(history)...);
 
     Δxs = vcat(process_row2.(history)...) .+ (nx+1)
