@@ -168,7 +168,7 @@ function run_calibration_experiments(Δp; p0=0.5, dry=false)
     lin_results  = measure_calibration(lin_model,  history)
     conf_results = measure_calibration(conf_model, history)
 
-    n_lin = length(lin_results); n_conf = length(con_results)
+    n_lin = length(lin_results); n_conf = length(conf_results)
 
     DataFrame([vcat(keys(lin_results)...,    keys(conf_results)...),
                vcat(values(lin_results)...,  values(conf_results)...),
