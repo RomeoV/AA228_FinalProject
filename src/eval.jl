@@ -22,6 +22,11 @@ function eval_problem(nx::Int, agent_strategy_p::Real, transition_model::Symbol;
         P.mdp.transition_model = T_model
         U = value_iteration(P.mdp; dry=dry);
         POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
+    elseif transition_model == :temp_calibrated
+        T_model_cal::DSLinCalModel = create_temp_calibrated_transition_model(P.mdp)
+        P.mdp.transition_model = T_model_cal
+        U = value_iteration(P.mdp; dry=dry);
+        POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
     elseif transition_model == :conformalized
         T_model_::DSLinModel = create_linear_transition_model(P.mdp)
         λs::Array = 0.1:0.1:0.9; append!(λs, [0.99, 0.995])
@@ -36,7 +41,7 @@ function eval_problem(nx::Int, agent_strategy_p::Real, transition_model::Symbol;
         @assert "error"
     end
     # policy = RolloutLookahead(P, RandomPolicy(P.mdp), 2)
-    initial_state = DSState([1, 1], rand(3:nx, 2))
+    initial_state = DSState([1, 1], [ceil((nx + 1) / 2), ceil((nx + 1) / 2)])
     U_π = policy_evaluation(P.mdp, policy;
                             trace_state=(verbose ? initial_state : nothing),
                             dry=dry)

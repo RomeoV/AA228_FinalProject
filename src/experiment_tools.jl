@@ -13,10 +13,9 @@ import Random: shuffle
 function run_experiments(; dry=false, outpath::Union{String, Nothing}=nothing)
     nx_vals = [10]  # ny is the same
     agent_aggressiveness_vals = LinRange(0//1, 1//1, 3)
-    # agent_aggressiveness_vals = [0., 0.5, 1.0]
 
-    seed_vals = rand(UInt, 2)
-    policy_strat_vals = [:conformalized, :linear, :perfect, :random]
+    seed_vals = rand(UInt, 3)
+    policy_strat_vals = [:perfect, :conformalized, :temp_calibrated, :linear, :random]
 
     df = DataFrame([Int[], Float64[], UInt[], Symbol[], Float64[]],
                    [:nx, :agent_aggressiveness_p, :seed_val, :policy_strat, :score],
