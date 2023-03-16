@@ -23,7 +23,7 @@ function eval_problem(nx::Int, agent_strategy_p::Real, transition_model::Symbol;
         U = value_iteration(P.mdp; dry=dry);
         POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
     elseif transition_model == :temp_calibrated
-        T_model_cal::DSLinCalModel = create_temp_calibrated_transition_model(P.mdp)
+        T_model_cal::DSLinCalModel = create_temp_calibrated_transition_model(P.mdp, P.mdp)
         P.mdp.transition_model = T_model_cal
         U = value_iteration(P.mdp; dry=dry);
         POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));

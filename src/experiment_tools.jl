@@ -64,13 +64,28 @@ function get_linear_policy_under_domain_shift(P, Δp; p0=0.5, dry=false)
     POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
 end
 
+function get_calibrated_linear_policy_under_domain_shift(P, Δp; p0=0.5, dry=false)
+    P.mdp.transition_model = DSPerfectModel()
+    P.mdp.agent_strategy = DSAgentStrat(p0)
+    mdp = P.mdp
+    mdp_shift = let mdp = deepcopy(mdp)
+        mdp.agent_strategy = DSAgentStrat(p0 + Δp)
+        mdp
+    end
+    calib_model = create_temp_calibrated_transition_model(mdp, mdp_shift)
+
+    P.mdp.transition_model = calib_model
+    U = value_iteration(P.mdp; dry=dry);
+    POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
+end
+
 function run_domain_shift_experiments(; dry=false, outpath::Union{String, Nothing}=nothing, verbose=false)
     nx_vals = [10]  # ny is the same
-    agent_aggressiveness_deltas = [0., 0.3]
+    agent_aggressiveness_deltas = [0., 0.2, 0.4]
     # agent_aggressiveness_vals = [0., 0.5, 1.0]
 
-    seed_vals = rand(UInt, 1)
-    policy_strat_vals = [:conformalized, :linear]
+    seed_vals = rand(UInt, 3)
+    policy_strat_vals = [:conformalized, :linear, :temp_calibrated]
 
     df = DataFrame([Int[], Float64[], UInt[], Symbol[], Float64[]],
                    [:nx, :agent_aggressiveness_delta, :seed_val, :policy_strat, :score],
@@ -81,7 +96,6 @@ function run_domain_shift_experiments(; dry=false, outpath::Union{String, Nothin
                                               agent_aggressiveness_deltas,
                                               seed_vals,
                                               policy_strat_vals)
-        # temp commment, remove later
         @show (nx, Δp, seed, pol)
         policy_value = begin
             P = make_P()
@@ -91,10 +105,12 @@ function run_domain_shift_experiments(; dry=false, outpath::Union{String, Nothin
                 get_linear_policy_under_domain_shift(deepcopy(P), Δp)
             elseif pol == :conformalized
                 get_conformalized_policy_under_domain_shift(deepcopy(P), Δp)
+            elseif pol == :temp_calibrated
+                get_calibrated_linear_policy_under_domain_shift(deepcopy(P), Δp)
             else
                 @error "invalid policy type"
             end
-            initial_state = DSState([1, 1], rand(3:nx, 2))
+            initial_state = DSState([1, 1], [ceil((nx + 1) / 2), ceil((nx + 1) / 2)])
             @assert P.mdp.transition_model isa DSPerfectModel
             P.mdp.agent_strategy = DSAgentStrat(0.5+Δp)
             U_π = policy_evaluation(P.mdp, policy;
@@ -124,11 +140,18 @@ function plot_results(df::DataFrame)
                       title="Reward vs agent agressiveness",
                       xlabel="Agent perfect step prob",
                       ylabel="Reward",
-                      leg_title=L"$T$ model")
+                      leg_title=L"$T$ model",
+                      leg=:bottomleft)
     @df df plot!(plt, :agent_aggressiveness_p, :score_mean;
                       group=:policy_strat, ribbon=:score_std, fillalpha=0.5,
                       seriescolor=seriescolors)
     return plt
+end
+
+function process_domain_shift_data(df::DataFrame; p0=0.5)
+    df[!, :agent_aggressiveness_delta] = df.agent_aggressiveness_delta .+ p0
+    rename!(df, :agent_aggressiveness_delta => :agent_aggressiveness_p)
+    process_data(df)
 end
 
 function process_data(df::DataFrame)

@@ -40,7 +40,7 @@ function create_linear_transition_model(mdp::MDP; dry=false, calibrate=false, n_
     return T_model
 end
 
-function create_temp_calibrated_transition_model(mdp::MDP; n_calib=100, dry=false)::DSLinCalModel
+function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP; n_calib=100, dry=false)::DSLinCalModel
     nx, ny = mdp.size
     b0 = begin
         states = []
@@ -56,19 +56,17 @@ function create_temp_calibrated_transition_model(mdp::MDP; n_calib=100, dry=fals
         SparseCat(states, probs)
     end
     lin_model = create_linear_transition_model(mdp; dry=dry)
-    calib_history = vcat([ collect(simulate(HistoryRecorder(), mdp, RandomPolicy(mdp), rand(b0)))
+    calib_history = vcat([ collect(simulate(HistoryRecorder(), mdp_calib, RandomPolicy(mdp_calib), rand(b0)))
                     for _ in 1:(dry ? 10 : n_calib) ]...);
     # Run optimization to find the best parameter T
     Ts = LinRange(1.0, 3.0, 9)
-    best_calibration_result = 0
-    calibrated_model = DSLinCalModel(lin_model, Ts[1])
-    for T in Ts
-        calibration_result = measure_calibration(calibrated_model, calib_history)
-        if mean(values(calibration_result)) > best_calibration_result
-            best_calibration_result = mean(values(calibration_result))
-            calibrated_model.temperature = T
-        end
+    measure_calibration_error_given_T(T) = begin
+        calibrated_model = DSLinCalModel(lin_model, T)
+        calibration_results = measure_calibration(calibrated_model, calib_history) |> values
+        return mean(calibration_results)
     end
+    _, T_idx = findmin(measure_calibration_error_given_T, Ts)
+    calibrated_model = DSLinCalModel(lin_model, Ts[T_idx])
     return calibrated_model
 end
 
