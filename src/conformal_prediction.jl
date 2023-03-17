@@ -1,26 +1,11 @@
 import POMDPTools: SparseCat, HistoryRecorder, RandomPolicy
 import POMDPs: simulate
 import LinearAlgebra: normalize!
-import AA228_FinalProject: process_row
+import AA228_FinalProject: process_row, make_uniform_belief
 import DroneSurveillance: predict
 import StatsBase: quantile
 import Unzip: unzip
 
-function make_uniform_belief(mdp)
-    nx, ny = mdp.size
-    states = DSState[]
-    for ax in 1:nx,
-        ay in 1:ny,
-        dx in 1:nx,
-        dy in 1:ny
-
-        if [dx, dy] != [ax ay] && [dx, dy] != mdp.region_B
-            push!(states, DSState([dx, dy], [ax, ay]))
-        end
-    end
-    probs = normalize!(ones(length(states)), 1)
-    SparseCat(states, probs)
-end
 
 function conformalize_λs(mdp, T_model, n_calib, λs)::Tuple{Array{<:Real}, Array{<:Real}}
     history = vcat([collect(simulate(HistoryRecorder(), mdp, RandomPolicy(mdp), rand(make_uniform_belief(mdp))))
