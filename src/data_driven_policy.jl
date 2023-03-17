@@ -1,5 +1,6 @@
 using DroneSurveillance
 import DroneSurveillance: DSLinModel, DSLinCalModel
+import DroneSurveillance: make_uniform_belief
 import POMDPTools: SparseCat, HistoryRecorder, RandomPolicy
 import POMDPs: simulate
 import LinearAlgebra: normalize!
@@ -23,15 +24,14 @@ function create_linear_transition_model(mdp::MDP;
         ξs, Δxs, Δys
     end
 
-    # TODO! What do we expect our model to predict when the next state is the terminal state?!
-    states = [(Δx, Δy) for Δx in -nx:nx,
-                           Δy in -ny:ny][:]
-    push!(states, -2 .* mdp.size)  # this is the "code" for moving to the terminal state
-    label(Δx, Δy) = findfirst(==((Δx, Δy)), states)
+    Δ_states = [(Δx, Δy) for Δx in -nx:nx,
+                            Δy in -ny:ny][:]
+    push!(Δ_states, -2 .* mdp.size)  # this is the "code" for moving to the terminal state
+    label(Δx, Δy) = findfirst(==((Δx, Δy)), Δ_states)
 
-    classifier = glr(MultinomialClassifier(), (2*nx+1)*(2*ny+1))
+    classifier = glr(MultinomialClassifier(), length(Δ_states))
     Δs = label.(Δxs, Δys)
-    @assert !any(isnothing, Δs) let idx=findfirst(nothing, states); "$((Δxs[idx], Δys[idx]))" end
+    @assert !any(isnothing, Δs) let idx=findfirst(nothing, Δ_states); "$((Δxs[idx], Δys[idx]))" end
 
     θ = fit(classifier, ξs, Δs) |> x->reshape(x, 4+1, :)'
 
@@ -92,23 +92,4 @@ function process_row(mdp, (s, a, sp, r, info, t, action_info)::NamedTuple)
     end
     ξ = [Δx, Δy, a.x, a.y]'
     return ξ, Δx_next, Δy_next
-end
-
-function make_uniform_belief(mdp::DroneSurveillanceMDP)
-    nx, ny = mdp.size
-    b0 = begin
-        states = []
-        for ax in 1:nx,
-            ay in 1:ny,
-            dx in 1:nx,
-            dy in 1:ny
-
-            if [dx, dy] != [ax ay] && [dx, dy] != mdp.region_B
-                push!(states, DSState([dx, dy], [ax, ay]))
-            end
-        end
-        probs = normalize!(ones(length(states)), 1)
-        SparseCat(states, probs)
-    end
-    return b0
 end
