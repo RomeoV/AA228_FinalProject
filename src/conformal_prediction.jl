@@ -5,6 +5,7 @@ import AA228_FinalProject: process_row, make_uniform_belief
 import DroneSurveillance: predict
 import StatsBase: quantile
 import Unzip: unzip
+import Match: match
 
 function conformalize_λs(mdp, T_model, n_calib, λs)::Array{<:Real}
     history = vcat([collect(simulate(HistoryRecorder(), mdp, RandomPolicy(mdp), rand(make_uniform_belief(mdp))))
@@ -36,4 +37,21 @@ function conformalize_λs(mdp, T_model, n_calib, λs)::Array{<:Real}
             end
             for λ in λs]
     return λs_hat
+end
+
+"Currently implements variant 1 from the writeup."
+function conformal_expectation(U::Dict{DSState, <:Real}, C_T::Dict{<:Real, Set{DSState}})
+    # return 0 if prediction set is empty
+    mean_(f, set::Set) = @match set begin
+        Set() => 0
+        _     => mean(f, set)
+    end
+
+    @info "hello"
+
+    # TODO: Implement other variants
+    λs = keys(C_T)
+    w = Dict(λ => 1/length(λs) for λ in λs)
+    sum(λ -> w[λ]*mean_(s->U[s], C_T[λ]),
+        λs)
 end
