@@ -6,25 +6,7 @@ import LinearAlgebra: normalize!
 import MLJLinearModels: MultinomialClassifier, glr, fit
 import StatsBase: mean
 
-function make_uniform_belief(mdp)
-    nx, ny = mdp.size
-    b0 = begin
-        states = []
-        for ax in 1:nx,
-            ay in 1:ny,
-            dx in 1:nx,
-            dy in 1:ny
-
-            if [dx, dy] != [ax ay] && [dx, dy] != mdp.region_B
-                push!(states, DSState([dx, dy], [ax, ay]))
-            end
-        end
-        probs = normalize!(ones(length(states)), 1)
-        SparseCat(states, probs)
-    end
-    return b0
-end
-
+### BASIC LINEAR MODELS ###
 function create_linear_transition_model(mdp::MDP;
                                         dry=false)::DSLinModel
     nx, ny = mdp.size
@@ -51,6 +33,8 @@ function create_linear_transition_model(mdp::MDP;
     return T_model
 end
 
+
+### TEMPERATURE SCALED MODELS ###
 function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP;
                                                  dry=false, n_calib=(dry ? 10 : 100))::DSLinCalModel
     nx, ny = mdp.size
@@ -73,10 +57,47 @@ function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP;
     calibrated_model = DSLinCalModel(lin_model, T_best)
     return calibrated_model
 end
+create_temp_calibrated_transition_model(mdp::MDP; dry=false, n_calib=(dry ? 10 : 100)) =
+    create_temp_calibrated_transition_model(mdp, mdp; dry=dry, n_calib=n_calib)
+
+
+### CONFORMALIZED MODELS ###
+function create_conformalized_transition_model(mdp_base, mdp_calib; dry=false, n_calib=(dry ? 10 : 100))
+    T_model = create_linear_transition_model(mdp_base; dry=dry)
+    λs::Array = 0.1:0.1:0.9; (!dry && append!(λs, [0.99]))
+    λs_hat_Δx, λs_hat_Δy = conformalize_λs(mdp_calib, T_model, n_calib, λs)
+    conf_model = DSConformalizedModel(T_model,
+                                      Dict(zip(λs, λs_hat_Δx)),  # λ̂ for Δx
+                                      Dict(zip(λs, λs_hat_Δy)))  # λ̂ for Δy
+    return conf_model
+end
+create_conformalized_transition_model(mdp; dry=false, n_calib=(dry ? 10 : 100)) =
+    create_conformalized_transition_model(mdp, mdp; dry=dry)
+
+### UTIL FUNCTIONS ###
 
 "Take one 'row', aka trajectory step, and yield the state and prediction outputs"
 function process_row((s, a, sp, r, info, t, action_info)::NamedTuple)
     Δx, Δy = s.agent.x - s.quad.x, s.agent.y - s.quad.y
     ξ = [Δx, Δy, a.x, a.y]'
     return ξ, Δx, Δy
+end
+
+function make_uniform_belief(mdp)
+    nx, ny = mdp.size
+    b0 = begin
+        states = []
+        for ax in 1:nx,
+            ay in 1:ny,
+            dx in 1:nx,
+            dy in 1:ny
+
+            if [dx, dy] != [ax ay] && [dx, dy] != mdp.region_B
+                push!(states, DSState([dx, dy], [ax, ay]))
+            end
+        end
+        probs = normalize!(ones(length(states)), 1)
+        SparseCat(states, probs)
+    end
+    return b0
 end
