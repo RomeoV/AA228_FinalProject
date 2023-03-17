@@ -6,8 +6,7 @@ import DroneSurveillance: predict
 import StatsBase: quantile
 import Unzip: unzip
 
-
-function conformalize_λs(mdp, T_model, n_calib, λs)::Tuple{Array{<:Real}, Array{<:Real}}
+function conformalize_λs(mdp, T_model, n_calib, λs)::Array{<:Real}
     history = vcat([collect(simulate(HistoryRecorder(), mdp, RandomPolicy(mdp), rand(make_uniform_belief(mdp))))
                     for _ in 1:n_calib ]...);
     dset_s = getfield.(history, :s)

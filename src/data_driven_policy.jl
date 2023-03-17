@@ -5,6 +5,7 @@ import POMDPs: simulate
 import LinearAlgebra: normalize!
 import MLJLinearModels: MultinomialClassifier, glr, fit
 import StatsBase: mean
+import Unzip: unzip
 
 ### BASIC LINEAR MODELS ###
 function create_linear_transition_model(mdp::MDP;
@@ -15,19 +16,22 @@ function create_linear_transition_model(mdp::MDP;
                     for _ in 1:(dry ? 10 : 1000) ]...);
 
     ξs, Δxs, Δys = begin
-        ξs, Δxs, Δys = process_row.(history)
+        ξs, Δxs, Δys = unzip(process_row.([mdp], history))
         ξs = vcat(ξs...);
-        Δxs = vcat(Δxs...) .+ (nx+1)
-        Δys = vcat(Δys...) .+ (ny+1)
+        Δxs = vcat(Δxs...)
+        Δys = vcat(Δys...)
         ξs, Δxs, Δys
     end
 
+    # TODO! What do we expect our model to predict when the next state is the terminal state?!
     states = [(Δx, Δy) for Δx in -nx:nx,
                            Δy in -ny:ny][:]
+    push!(states, -2 .* mdp.size)  # this is the "code" for moving to the terminal state
     label(Δx, Δy) = findfirst(==((Δx, Δy)), states)
 
     classifier = glr(MultinomialClassifier(), (2*nx+1)*(2*ny+1))
     Δs = label.(Δxs, Δys)
+    @assert !any(isnothing, Δs) let idx=findfirst(nothing, states); "$((Δxs[idx], Δys[idx]))" end
 
     θ = fit(classifier, ξs, Δs) |> x->reshape(x, 4+1, :)'
 
@@ -79,13 +83,18 @@ create_conformalized_transition_model(mdp; dry=false, n_calib=(dry ? 10 : 100)) 
 ### UTIL FUNCTIONS ###
 
 "Take one 'row', aka trajectory step, and yield the state and prediction outputs"
-function process_row((s, a, sp, r, info, t, action_info)::NamedTuple)
+function process_row(mdp, (s, a, sp, r, info, t, action_info)::NamedTuple)
     Δx, Δy = s.agent.x - s.quad.x, s.agent.y - s.quad.y
+    Δx_next, Δy_next = if sp.quad != mdp.terminal_state
+        sp.agent.x - sp.quad.x, sp.agent.y - sp.quad.y
+    else
+        -2 .* mdp.size
+    end
     ξ = [Δx, Δy, a.x, a.y]'
-    return ξ, Δx, Δy
+    return ξ, Δx_next, Δy_next
 end
 
-function make_uniform_belief(mdp)
+function make_uniform_belief(mdp::DroneSurveillanceMDP)
     nx, ny = mdp.size
     b0 = begin
         states = []

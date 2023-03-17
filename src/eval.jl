@@ -1,6 +1,7 @@
 import FLoops: @floop
 import Random: seed!
 import DroneSurveillance: ACTION_DIRS, DSAgentStrat, DSPerfectModel
+import DroneSurveillance: ACTION_DIRS, DSLinModel, DSLinCalModel, DSConformalizedModel
 import POMDPTools
 import POMDPTools: weighted_iterator, Deterministic
 import Base: product
@@ -29,9 +30,9 @@ function eval_problem(nx::Int, agent_strategy_p::Real, transition_model::Symbol;
         POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
     elseif transition_model == :conformalized
         T_model_::DSLinModel = create_linear_transition_model(P.mdp)
-        λs::Array = 0.1:0.1:0.9; append!(λs, [0.99, 0.995])
-        λs_hat_Δx, λs_hat_Δy = conformalize_λs(P.mdp, T_model_, 1000, λs)
-        conf_model = DSConformalizedModel(T_model_, Dict(zip(λs, λs_hat_Δx)), Dict(zip(λs, λs_hat_Δy)))
+        λs::Array = 0.1:0.1:0.9; (!dry && append!(λs, [0.99]))
+        λs_hat = conformalize_λs(P.mdp, T_model_, 101, λs)
+        conf_model = DSConformalizedModel(T_model_, Dict(zip(λs, λs_hat)))
         P.mdp.transition_model = conf_model
         U = value_iteration_conformal(P.mdp; dry=dry);
         POMDPTools.FunctionPolicy(s->runtime_policy_conformal(P.mdp, U, s));
@@ -140,21 +141,25 @@ function value_iteration_conformal(mdp::DroneSurveillanceMDP;
                         # note that we use the true transition model here!
                         retval = DroneSurveillance.transition(mdp, mdp.agent_strategy, mdp.transition_model, s, a, λ)
                         if retval isa Deterministic
-                            r
-                        elseif retval isa Tuple{Set, Set}
-                            Δx_set, Δy_set = retval
-                            if !isempty(Δx_set) && !isempty(Δy_set)
-                                # it can happen that the predicted state is 
+                            r  # TODO: r.value or something?
+                        elseif retval isa Set
+                            Δ_set = retval
+                            if !isempty(Δ_set)
+                                # it can happen that the predicted state is
                                 r + γ * mean(begin
-                                                s_ = DSState((s.quad + a), s.quad + a + [Δx, Δy])
-                                                U_[project_inbounds_(s_)]
+                                                if (Δx, Δy) != -2 .* mdp.size
+                                                    s_ = DSState((s.quad + a), s.quad + a + [Δx, Δy])
+                                                    U_[project_inbounds_(s_)]
+                                                else
+                                                    U_[mdp.terminal_state]
+                                                end
                                             end
-                                            for (Δx, Δy) in product(Δx_set, Δy_set))
+                                            for (Δx, Δy) in Δ_set)
                             else
                                 r   # TODO, this is probably wrong
                             end
                         else
-                            @assert "error"
+                            error("retval is neither deterministic, nor a tuple")
                         end
                      end,
                      ACTION_DIRS)
@@ -189,15 +194,19 @@ function runtime_policy_conformal(mdp, U, s)
             retval = DroneSurveillance.transition(mdp, mdp.agent_strategy, mdp.transition_model, s, a, λ)
             if retval isa Deterministic
                 r
-            elseif retval isa Tuple{Set, Set}
-                Δx_set, Δy_set = retval
-                if !isempty(Δx_set) && !isempty(Δy_set)
+            elseif retval isa Set
+                Δ_set = retval
+                if !isempty(Δ_set)
                     # it can happen that the predicted state is 
                     r + γ * mean(begin
-                                    s_ = DSState((s.quad + a), s.quad + a + [Δx, Δy])
-                                    U[project_inbounds_(s_)]
+                                    if (Δx, Δy) != -2 .* mdp.size
+                                        s_ = DSState((s.quad + a), s.quad + a + [Δx, Δy])
+                                        U[project_inbounds_(s_)]
+                                    else
+                                        U[mdp.terminal_state]
+                                    end
                                 end
-                                for (Δx, Δy) in product(Δx_set, Δy_set))
+                                for (Δx, Δy) in Δ_set)
                 else
                     r   # TODO, this is probably wrong
                 end
