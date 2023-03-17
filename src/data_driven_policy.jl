@@ -25,13 +25,12 @@ function make_uniform_belief(mdp)
     return b0
 end
 
-function create_linear_transition_model(mdp::MDP; dry=false)::DSLinModel
-    # mdp = DroneSurveillanceMDP{PerfectCam}(size=(10, 10), agent_strategy=DSAgentStrat(0.5))
+function create_linear_transition_model(mdp::MDP;
+                                        dry=false)::DSLinModel
     nx, ny = mdp.size
     b0 = make_uniform_belief(mdp)
     history = vcat([ collect(simulate(HistoryRecorder(), mdp, RandomPolicy(mdp), rand(b0)))
                     for _ in 1:(dry ? 10 : 1000) ]...);
-    ξs = vcat(process_row.(history)...);
 
     ξs, Δxs, Δys = begin
         ξs, Δxs, Δys = process_row.(history)
@@ -49,16 +48,16 @@ function create_linear_transition_model(mdp::MDP; dry=false)::DSLinModel
     θ_Δy = fit(classifier_y, ξs, Δys) |> x->reshape(x, 4+1, :)'
 
     T_model = DSLinModel(θ_Δx, θ_Δy)
-    # Δx_distr, Δy_distr = DroneSurveillance.predict(T_model, DSState([1, 1], [5, 5]), DSPos([1, 0]))
     return T_model
 end
 
-function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP; n_calib=100, dry=false)::DSLinCalModel
+function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP;
+                                                 dry=false, n_calib=(dry ? 10 : 100))::DSLinCalModel
     nx, ny = mdp.size
     b0 = make_uniform_belief(mdp)
     lin_model = create_linear_transition_model(mdp; dry=dry)
     calib_history = vcat([collect(simulate(HistoryRecorder(), mdp_calib, RandomPolicy(mdp_calib), rand(b0)))
-                          for _ in 1:(dry ? 10 : n_calib) ]...);
+                          for _ in 1:n_calib ]...);
 
     # Run optimization to find the best parameter T
     Ts = LinRange(0.1, 3.0, 20)
@@ -68,7 +67,9 @@ function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP; n_cal
         return mean(calibration_results)
     end
     _, T_idx = findmin(measure_calibration_error_given_T, Ts)
-    calibrated_model = DSLinCalModel(lin_model, Ts[T_idx])
+    T_best = Ts[I_idx]
+
+    calibrated_model = DSLinCalModel(lin_model, T_best)
     return calibrated_model
 end
 
