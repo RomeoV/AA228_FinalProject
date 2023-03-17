@@ -24,7 +24,7 @@ function make_uniform_belief(mdp)
     return b0
 end
 
-function create_linear_transition_model(mdp::MDP; dry=false, calibrate=false, n_calib=100)::DSLinModel
+function create_linear_transition_model(mdp::MDP; dry=false)::DSLinModel
     # mdp = DroneSurveillanceMDP{PerfectCam}(size=(10, 10), agent_strategy=DSAgentStrat(0.5))
     nx, ny = mdp.size
     b0 = make_uniform_belief(mdp)
