@@ -1,7 +1,7 @@
 import POMDPTools: SparseCat, HistoryRecorder, RandomPolicy
 import POMDPs: simulate
 import LinearAlgebra: normalize!
-import AA228_FinalProject: process_row, process_row2
+import AA228_FinalProject: process_row
 import DroneSurveillance: predict
 import StatsBase: quantile
 import Unzip: unzip

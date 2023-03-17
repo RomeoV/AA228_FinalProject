@@ -1,4 +1,5 @@
 using DroneSurveillance
+import DroneSurveillance: DSLinModel, DSLinCalModel
 import POMDPTools: SparseCat, HistoryRecorder, RandomPolicy
 import POMDPs: simulate
 import LinearAlgebra: normalize!
@@ -32,8 +33,14 @@ function create_linear_transition_model(mdp::MDP; dry=false)::DSLinModel
                     for _ in 1:(dry ? 10 : 1000) ]...);
     ξs = vcat(process_row.(history)...);
 
-    Δxs = vcat(process_row2.(history)...) .+ (nx+1)
-    Δys = vcat(process_row3.(history)...) .+ (ny+1)
+    ξs, Δxs, Δys = begin
+        ξs, Δxs, Δys = process_row.(history)
+        ξs = vcat(ξs...);
+        Δxs = vcat(Δxs...) .+ (nx+1)
+        Δys = vcat(Δys...) .+ (ny+1)
+        ξs, Δxs, Δys
+    end
+
 
     classifier_x = glr(MultinomialClassifier(), 2*nx+1)
     classifier_y = glr(MultinomialClassifier(), 2*ny+1)
@@ -52,6 +59,7 @@ function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP; n_cal
     lin_model = create_linear_transition_model(mdp; dry=dry)
     calib_history = vcat([collect(simulate(HistoryRecorder(), mdp_calib, RandomPolicy(mdp_calib), rand(b0)))
                           for _ in 1:(dry ? 10 : n_calib) ]...);
+
     # Run optimization to find the best parameter T
     Ts = LinRange(0.1, 3.0, 20)
     measure_calibration_error_given_T(T) = begin
@@ -64,20 +72,9 @@ function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP; n_cal
     return calibrated_model
 end
 
-# extract predictors, which we call \xi
+"Take one 'row', aka trajectory step, and yield the state and prediction outputs"
 function process_row((s, a, sp, r, info, t, action_info)::NamedTuple)
     Δx, Δy = s.agent.x - s.quad.x, s.agent.y - s.quad.y
     ξ = [Δx, Δy, a.x, a.y]'
-    return ξ
-end
-
-# extract Δx
-function process_row2((s, a, sp, r, info, t, action_info)::NamedTuple)
-    Δx, Δy = sp.agent.x - sp.quad.x, sp.agent.y - sp.quad.y
-    return Δx
-end
-# extract Δy
-function process_row3((s, a, sp, r, info, t, action_info)::NamedTuple)
-    Δx, Δy = sp.agent.x - sp.quad.x, sp.agent.y - sp.quad.y
-    return Δy
+    return ξ, Δx, Δy
 end
