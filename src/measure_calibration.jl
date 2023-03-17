@@ -20,7 +20,8 @@ function measure_calibration(model, history; dry=false) :: OrderedDict{Real, Rea
         λ => begin
                 preds = predict.([model], dset_s, dset_a, λ)
                 preds_Δx, preds_Δy = unzip(preds)
-                mean(hcat(true_Δxs .∈ preds_Δx, true_Δys .∈ preds_Δy)) .|> x->round(x, sigdigits=3)
+                mean([true_Δxs .∈ preds_Δx ;
+                      true_Δys .∈ preds_Δy]) .|> x->round(x, sigdigits=3)
         end
         for λ in vcat(0.1:0.1:0.9, 0.99, 0.995)
     )

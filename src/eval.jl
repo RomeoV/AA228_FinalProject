@@ -41,7 +41,7 @@ function eval_problem(nx::Int, agent_strategy_p::Real, transition_model::Symbol;
         @assert "error"
     end
     # policy = RolloutLookahead(P, RandomPolicy(P.mdp), 2)
-    initial_state = DSState([1, 1], [ceil((nx + 1) / 2), ceil((nx + 1) / 2)])
+    initial_state = DSState([1, 1], [ceil(Int, (nx + 1) / 2), ceil(Int, (nx + 1) / 2)])
     U_π = policy_evaluation(P.mdp, policy;
                             trace_state=(verbose ? initial_state : nothing),
                             dry=dry)
