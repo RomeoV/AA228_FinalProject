@@ -8,7 +8,7 @@ import Base: product
 import StatsBase: mean
 import Match: @match
 # function eval_problem(nx::Int, agent_strategy::DSAgentStrategy, transition_model::DSTransitionModel; seed_val=rand(Int))
-function eval_problem(nx::Int, agent_strategy_p::Real, transition_model::Type{DSTransitionModel};
+function eval_problem(transition_model::Type{<:DSTransitionModel}, nx::Int, agent_strategy_p::Real;
                       seed_val=rand(UInt), verbose=false, dry=false)
     seed!(seed_val)
     P = make_P()
@@ -16,20 +16,20 @@ function eval_problem(nx::Int, agent_strategy_p::Real, transition_model::Type{DS
     P.mdp.agent_strategy = DSAgentStrat(agent_strategy_p)
 
     @match transition_model begin
-        :perfect => begin P.mdp.transition_model = DSPerfectModel() end
-        :linear  => begin
+        DSPerfectModel => begin P.mdp.transition_model = DSPerfectModel() end
+        DSLinModel  => begin
             T_model::DSLinModel = create_linear_transition_model(P.mdp)
             P.mdp.transition_model = T_model end
-        :temp_calibrated => begin
+        DSLinCalModel => begin
             T_model_cal::DSLinCalModel = create_temp_calibrated_transition_model(P.mdp, P.mdp)
             P.mdp.transition_model = T_model_cal end
-        :conformalized => begin
+        DSConformalizedModel => begin
             T_model_::DSLinModel = create_linear_transition_model(P.mdp)
             λs::Array = 0.1:0.1:0.9; (!dry && append!(λs, [0.99]))
             λs_hat = conformalize_λs(P.mdp, T_model_, 101, λs)
             conf_model = DSConformalizedModel(T_model_, Dict(zip(λs, λs_hat)))
             P.mdp.transition_model = conf_model end
-        :random => begin P.mdp.transidion_model = DSRandomModel() end
+        DSRandomModel => begin P.mdp.transidion_model = DSRandomModel() end
         _ => error("unknown transition model")
     end
     U = value_iteration(P.mdp; dry=dry);
