@@ -68,6 +68,7 @@ function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP;
     end
     _, T_idx = findmin(measure_calibration_error_given_T, Ts)
     T_best = Ts[I_idx]
+    @debug T_best
 
     calibrated_model = DSLinCalModel(lin_model, T_best)
     return calibrated_model
