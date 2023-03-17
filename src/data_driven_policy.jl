@@ -22,14 +22,16 @@ function create_linear_transition_model(mdp::MDP;
         ξs, Δxs, Δys
     end
 
+    states = [(Δx, Δy) for Δx in -nx:nx,
+                           Δy in -ny:ny][:]
+    label(Δx, Δy) = findfirst(==((Δx, Δy)), states)
 
-    classifier_x = glr(MultinomialClassifier(), 2*nx+1)
-    classifier_y = glr(MultinomialClassifier(), 2*ny+1)
+    classifier = glr(MultinomialClassifier(), (2*nx+1)*(2*ny+1))
+    Δs = label.(Δxs, Δys)
 
-    θ_Δx = fit(classifier_x, ξs, Δxs) |> x->reshape(x, 4+1, :)'
-    θ_Δy = fit(classifier_y, ξs, Δys) |> x->reshape(x, 4+1, :)'
+    θ = fit(classifier, ξs, Δs) |> x->reshape(x, 4+1, :)'
 
-    T_model = DSLinModel(θ_Δx, θ_Δy)
+    T_model = DSLinModel(θ, mdp.size)
     return T_model
 end
 
@@ -65,7 +67,7 @@ create_temp_calibrated_transition_model(mdp::MDP; dry=false, n_calib=(dry ? 10 :
 function create_conformalized_transition_model(mdp_base, mdp_calib; dry=false, n_calib=(dry ? 10 : 100))
     T_model = create_linear_transition_model(mdp_base; dry=dry)
     λs::Array = 0.1:0.1:0.9; (!dry && append!(λs, [0.99]))
-    λs_hat_Δx, λs_hat_Δy = conformalize_λs(mdp_calib, T_model, n_calib, λs)
+    λs_hat = conformalize_λs(mdp_calib, T_model, n_calib, λs)
     conf_model = DSConformalizedModel(T_model,
                                       Dict(zip(λs, λs_hat_Δx)),  # λ̂ for Δx
                                       Dict(zip(λs, λs_hat_Δy)))  # λ̂ for Δy

@@ -29,32 +29,29 @@ function conformalize_λs(mdp, T_model, n_calib, λs)::Tuple{Array{<:Real}, Arra
     dset_a = getfield.(history, :a)
     dset_s_ = getfield.(history, :sp)
 
-    preds = predict.([T_model], dset_s, dset_a)
-    preds_Δx, preds_Δy = unzip(preds)
+    pred_Δs = predict.([T_model], dset_s, dset_a)
 
     true_Δxs = [s_.agent.x - s_.quad.x
                 for s_ in dset_s_]
     true_Δys = [s_.agent.y - s_.quad.y
                 for s_ in dset_s_]
-    λs_hat = []
-    for (pred_vals, true_vals) in [(preds_Δx, true_Δxs),
-                                   (preds_Δy, true_Δys)]
-        scores = [begin
-                    scores = 1 .- pred.probs
-                    idx = findfirst(==(true_val), pred.vals)
-                    (isnothing(idx) ? (1. - 0) : scores[idx])
-                end
-                for (pred, true_val) in zip(pred_vals, true_vals)]
 
-        λs_hat_ = [begin
-                    α = 1 - λ  # error rate
-                    quantile_val = ceil((n_calib+1)*(1 - α)) / n_calib
-                    quantile(scores,  quantile_val)
-                end
-                for λ in λs]
-        push!(λs_hat, λs_hat_)
-    end
-    return (λs_hat[1], λs_hat[2])
+    true_Δs = zip(true_Δxs, true_Δys)
+
+    scores = [begin
+                scores = 1 .- pred.probs
+                idx = findfirst(==(true_val), pred.vals)  # true value could have been pruned
+                (isnothing(idx) ? (1. - 0) : scores[idx])
+            end
+            for (pred, true_val) in zip(pred_Δs, true_Δs)]
+
+    λs_hat  = [begin
+                α = 1 - λ  # error rate
+                quantile_val = ceil((n_calib+1)*(1 - α)) / n_calib
+                quantile(scores,  quantile_val)
+            end
+            for λ in λs]
+    return λs_hat
 end
 
 function predict_with_conf_model_test()
