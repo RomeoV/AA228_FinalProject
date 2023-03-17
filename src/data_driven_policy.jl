@@ -5,8 +5,7 @@ import LinearAlgebra: normalize!
 import MLJLinearModels: MultinomialClassifier, glr, fit
 import StatsBase: mean
 
-function create_linear_transition_model(mdp::MDP; dry=false, calibrate=false, n_calib=100)::DSLinModel
-    # mdp = DroneSurveillanceMDP{PerfectCam}(size=(10, 10), agent_strategy=DSAgentStrat(0.5))
+function make_uniform_belief(mdp)
     nx, ny = mdp.size
     b0 = begin
         states = []
@@ -22,6 +21,13 @@ function create_linear_transition_model(mdp::MDP; dry=false, calibrate=false, n_
         probs = normalize!(ones(length(states)), 1)
         SparseCat(states, probs)
     end
+    return b0
+end
+
+function create_linear_transition_model(mdp::MDP; dry=false, calibrate=false, n_calib=100)::DSLinModel
+    # mdp = DroneSurveillanceMDP{PerfectCam}(size=(10, 10), agent_strategy=DSAgentStrat(0.5))
+    nx, ny = mdp.size
+    b0 = make_uniform_belief(mdp)
     history = vcat([ collect(simulate(HistoryRecorder(), mdp, RandomPolicy(mdp), rand(b0)))
                     for _ in 1:(dry ? 10 : 1000) ]...);
     ξs = vcat(process_row.(history)...);
@@ -42,19 +48,7 @@ end
 
 function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP; n_calib=100, dry=false)::DSLinCalModel
     nx, ny = mdp.size
-    b0 = begin
-        states = []
-        for ax in 1:nx,
-            ay in 1:ny,
-            dx in 1:nx,
-            dy in 1:ny
-            if [dx, dy] != [ax ay] && [dx, dy] != mdp.region_B
-                push!(states, DSState([dx, dy], [ax, ay]))
-            end
-        end
-        probs = normalize!(ones(length(states)), 1)
-        SparseCat(states, probs)
-    end
+    b0 = make_uniform_belief(mdp)
     lin_model = create_linear_transition_model(mdp; dry=dry)
     calib_history = vcat([ collect(simulate(HistoryRecorder(), mdp_calib, RandomPolicy(mdp_calib), rand(b0)))
                     for _ in 1:(dry ? 10 : n_calib) ]...);
