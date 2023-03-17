@@ -50,10 +50,10 @@ function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP; n_cal
     nx, ny = mdp.size
     b0 = make_uniform_belief(mdp)
     lin_model = create_linear_transition_model(mdp; dry=dry)
-    calib_history = vcat([ collect(simulate(HistoryRecorder(), mdp_calib, RandomPolicy(mdp_calib), rand(b0)))
-                    for _ in 1:(dry ? 10 : n_calib) ]...);
+    calib_history = vcat([collect(simulate(HistoryRecorder(), mdp_calib, RandomPolicy(mdp_calib), rand(b0)))
+                          for _ in 1:(dry ? 10 : n_calib) ]...);
     # Run optimization to find the best parameter T
-    Ts = LinRange(1.0, 3.0, 9)
+    Ts = LinRange(0.1, 3.0, 20)
     measure_calibration_error_given_T(T) = begin
         calibrated_model = DSLinCalModel(lin_model, T)
         calibration_results = measure_calibration(calibrated_model, calib_history) |> values
