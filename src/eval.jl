@@ -2,6 +2,7 @@ import FLoops: @floop
 import Random: seed!
 import DroneSurveillance: ACTION_DIRS, DSAgentStrat, DSPerfectModel
 import DroneSurveillance: ACTION_DIRS, DSTransitionModel, DSLinModel, DSLinCalModel, DSConformalizedModel, DSRandomModel
+import POMDPs: reward
 import POMDPTools
 import POMDPTools: weighted_iterator, Deterministic
 import Base: product
@@ -13,26 +14,17 @@ function eval_problem(transition_model::Type{<:DSTransitionModel}, nx::Int, agen
     seed!(seed_val)
     P = make_P()
     P.mdp.size = (nx, nx)
-    P.mdp.agent_strategy = DSAgentStrat(agent_strategy_p)
+    agent_strategy = DSAgentStrat(agent_strategy_p)
 
-    @match transition_model begin
-        DSPerfectModel => begin P.mdp.transition_model = DSPerfectModel() end
-        DSLinModel  => begin
-            T_model::DSLinModel = create_linear_transition_model(P.mdp)
-            P.mdp.transition_model = T_model end
-        DSLinCalModel => begin
-            T_model_cal::DSLinCalModel = create_temp_calibrated_transition_model(P.mdp, P.mdp)
-            P.mdp.transition_model = T_model_cal end
-        DSConformalizedModel => begin
-            T_model_::DSLinModel = create_linear_transition_model(P.mdp)
-            λs::Array = 0.1:0.1:0.9; (!dry && append!(λs, [0.99]))
-            λs_hat = conformalize_λs(P.mdp, T_model_, 101, λs)
-            conf_model = DSConformalizedModel(T_model_, Dict(zip(λs, λs_hat)))
-            P.mdp.transition_model = conf_model end
-        DSRandomModel => begin P.mdp.transidion_model = DSRandomModel() end
+    P.mdp.transition_model = @match transition_model begin
+        _::Type{DSPerfectModel} =>  DSPerfectModel(agent_strategy)
+        _::Type{DSRandomModel} => DSRandomModel()
+        _::Type{DSLinModel}  => create_linear_transition_model(P.mdp)
+        _::Type{DSLinCalModel} => create_temp_calibrated_transition_model(P.mdp, P.mdp)
+        _::Type{DSConformalizedModel} => create_conformalized_transition_model(P.mdp, P.mdp)
         _ => error("unknown transition model")
     end
-    U = value_iteration(P.mdp; dry=dry);
+    U = value_iteration(P.mdp, P.mdp.transition_model; dry=dry);
     policy = POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, P.mdp.transition_model, U, s))
 
     initial_state = DSState([1, 1], [ceil(Int, (nx + 1) / 2), ceil(Int, (nx + 1) / 2)])
@@ -43,8 +35,9 @@ function eval_problem(transition_model::Type{<:DSTransitionModel}, nx::Int, agen
     return policy_value
 end
 
-function policy_evaluation(mdp::DroneSurveillanceMDP, policy::Policy;
+function policy_evaluation(mdp::DroneSurveillanceMDP, agent_strategy::DSAgentStrat, policy::Policy;
                            trace_state::Union{Nothing, DSState}=nothing, dry=false)
+    T_model = DSPerfectModel(agent_strategy)
     nx, ny = mdp.size
     γ = mdp.discount_factor
     nonterminal_states = [DSState([qx, qy], [ax, ay])
@@ -63,7 +56,7 @@ function policy_evaluation(mdp::DroneSurveillanceMDP, policy::Policy;
             U[s] = let a = action(policy, s),
                        r = reward(mdp, s, a),
                        # note that we use the true transition model here!
-                       T_probs = DroneSurveillance.transition(mdp, mdp.agent_strategy, DSPerfectModel(), s, a),
+                       T_probs = DroneSurveillance.transition(mdp, T_model, s, a),
                        T_probs_iter = weighted_iterator(T_probs)
                 r + γ * sum(p*U_[s_] for (s_, p) in T_probs_iter)
             end
@@ -74,9 +67,10 @@ function policy_evaluation(mdp::DroneSurveillanceMDP, policy::Policy;
 end
 
 
-function value_iteration(mdp::DroneSurveillanceMDP;
+function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSTransitionModel;
                          trace_state::Union{Nothing, DSState}=nothing,
                          dry=false)
+    @info "hello2"
     nx, ny = mdp.size
     γ = mdp.discount_factor
     nonterminal_states = [DSState([qx, qy], [ax, ay])
@@ -93,12 +87,11 @@ function value_iteration(mdp::DroneSurveillanceMDP;
         U_ = U  # Alternative: U_ = copy(U)
         @floop for s in nonterminal_states
             U[s] = maximum(
-                     a -> let U_wrapped = wrap_U(mdp, U_, s, a),
-                              r = reward(mdp, s, a),
+                     a -> let r = reward(mdp, s, a),
                               # note that we use the true transition model here!
-                              T_probs = DroneSurveillance.transition(mdp, mdp.agent_strategy, mdp.transition_model, s, a),
+                              T_probs = DroneSurveillance.transition(mdp, T_model, s, a),
                               T_iter = weighted_iterator(T_probs)
-                         r + γ * sum(p*U_wrapped(s_)
+                         r + γ * sum(p*U[s_]
                                      for (s_, p) in T_iter)
                      end,
                      ACTION_DIRS)
@@ -109,12 +102,14 @@ function value_iteration(mdp::DroneSurveillanceMDP;
 end
 
 "Currently implements variant 1 from the writeup."
-function conformal_expectation(U::Function, C_T::Dict{<:Real, Set{DSState}})
+function conformal_expectation(U::Dict{DSState, <:Real}, C_T::Dict{<:Real, Set{DSState}})
     # return 0 if prediction set is empty
     mean_(f, set::Set) = @match set begin
         Set() => 0
         _     => mean(f, set)
     end
+
+    @info "hello"
 
     # TODO: Implement other variants
     λs = keys(C_T)
@@ -123,26 +118,9 @@ function conformal_expectation(U::Function, C_T::Dict{<:Real, Set{DSState}})
         λs)
 end
 
-function bellmann_eq_conformal(mdp, U_fn, s, a)
-    γ = mdp.discount_factor
-    r = reward(mdp, s, a)
-    retval = DroneSurveillance.transition(mdp,
-                                          mdp.agent_strategy,
-                                          mdp.transition_model,
-                                          s,
-                                          a)
-    @match retval begin
-        Deterministic(r)                    => r  # if we reached the terminal state
-        λ_to_Δs::Dict{<:Real, Set{DSState}} =>    # map from λ to prediction set
-            r + γ*conformal_expectation(U_fn, λ_to_Δs)
-        _                                   => error("unknown transition return type")
-    end
-end
-
-function value_iteration_conformal(mdp::DroneSurveillanceMDP;
+function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSConformalizedModel;
                          trace_state::Union{Nothing, DSState}=nothing,
                          dry=false)
-    @assert mdp.transition_model isa DSConformalizedModel
     nx, ny = mdp.size
     γ = mdp.discount_factor
     nonterminal_states = [DSState([qx, qy], [ax, ay])
@@ -159,9 +137,9 @@ function value_iteration_conformal(mdp::DroneSurveillanceMDP;
         # So we use the Gauss-Seidl version, which should converge faster.
         U_ = U  # Alternative: U_ = copy(U)
         @floop for s in nonterminal_states
-            U[s] = maximum(a->let r = reward(mdp, s, a); γ = mdp.discount_factor,
-                                  Δs_pred = transition(mdp, mdp.agent_strategy,
-                                                       mdp.transition_model, s, a);
+            U[s] = maximum(a->let r = reward(mdp, s, a),
+                                  γ = mdp.discount_factor,
+                                  Δs_pred = transition(mdp, T_model, s, a);
                                r + γ * conformal_expectation(U_, Δs_pred)
                            end,
                            ACTION_DIRS)
@@ -172,33 +150,22 @@ function value_iteration_conformal(mdp::DroneSurveillanceMDP;
 end
 
 function runtime_policy(mdp, T_model, U, s)
-    a, _ = findmax(a->let r = reward(mdp, s, a); γ = mdp.discount_factor,
-                          T_probs = transition(mdp, mdp.agent_strategy,
-                                               mdp.transition_model, s, a),
-                          T_iter  = weighted_iterator(T_probs);
-                       r + γ * sum(p * U[s_]
-                                   for (s_, p) in T_iter)
-                   end,
-                   ACTION_DIRS)
-    return a
+    _, a_idx = findmax(a->let r = reward(mdp, s, a),
+                              γ = mdp.discount_factor,
+                              T_probs = DroneSurveillance.transition(mdp, T_model, s, a),
+                              T_iter  = weighted_iterator(T_probs);
+                           r + γ * sum(p * U[s_]
+                                       for (s_, p) in T_iter)
+                       end,
+                       ACTION_DIRS)
+    return ACTION_DIRS[a_idx]
 end
 function runtime_policy(mdp, T_model::DSConformalizedModel, U, s)
-    a, _ = findmax(a->let U_wrapped = wrap_U(mdp, U_, s, a),
-                          r = reward(mdp, s, a); γ = mdp.discount_factor,
-                          Δs_pred = transition(mdp, mdp.agent_strategy,
-                                               mdp.transition_model, s, a);
-                       r + γ * conformal_expectation(U_wrapped, Δs_pred)
-                   end,
-                   ACTION_DIRS)
-    return a
+    _, a_idx = findmax(a->let r = reward(mdp, s, a),
+                              γ = mdp.discount_factor,
+                              Δs_pred = DroneSurveillance.transition(mdp, T_model, s, a);
+                           r + γ * conformal_expectation(U, Δs_pred)
+                       end,
+                       ACTION_DIRS)
+    return ACTION_DIRS[a_idx]
 end
-
-function project_inbounds(mdp, s)
-    nx, ny = mdp.size
-    qx = clamp(s.quad.x, 1:nx)
-    qy = clamp(s.quad.y, 1:ny)
-    ax = clamp(s.agent.x, 1:nx)
-    ay = clamp(s.agent.y, 1:ny)
-    return DSState([qx, qy], [ax, ay])
-end
-

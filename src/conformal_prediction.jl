@@ -13,7 +13,7 @@ function conformalize_λs(mdp, T_model, n_calib, λs)::Array{<:Real}
     dset_a = getfield.(history, :a)
     dset_s_ = getfield.(history, :sp)
 
-    pred_Δs = predict.([T_model], dset_s, dset_a)
+    pred_Δs = predict.([mdp], [T_model], dset_s, dset_a)
 
     true_Δxs = [s_.agent.x - s_.quad.x
                 for s_ in dset_s_]
@@ -36,15 +36,4 @@ function conformalize_λs(mdp, T_model, n_calib, λs)::Array{<:Real}
             end
             for λ in λs]
     return λs_hat
-end
-
-function predict_with_conf_model_test()
-    # predict(conf_model, DSState(rand(1:nx, 2), rand(1:nx, 2)), DSPos([0, 1]), 0.3)
-    s = DSState(rand(1:10, 2), rand(1:10, 2))
-    @show s
-    a = DSPos([0, 1])
-    # [λ=>predict(conf_model, s, a, λ)
-    #  for λ in sort(collect(keys(conf_model.conf_map_Δx)))]
-    [λ=>predict(conf_model, s, a, λ)
-     for λ in [0.1]]
 end

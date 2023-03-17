@@ -72,10 +72,7 @@ function create_conformalized_transition_model(mdp_base, mdp_calib; dry=false, n
     T_model = create_linear_transition_model(mdp_base; dry=dry)
     λs::Array = 0.1:0.1:0.9; (!dry && append!(λs, [0.99]))
     λs_hat = conformalize_λs(mdp_calib, T_model, n_calib, λs)
-    conf_model = DSConformalizedModel(T_model,
-                                      Dict(zip(λs, λs_hat_Δx)),  # λ̂ for Δx
-                                      Dict(zip(λs, λs_hat_Δy)))  # λ̂ for Δy
-    return conf_model
+    return DSConformalizedModel(T_model, Dict(zip(λs, λs_hat)))
 end
 create_conformalized_transition_model(mdp; dry=false, n_calib=(dry ? 10 : 100)) =
     create_conformalized_transition_model(mdp, mdp; dry=dry)
