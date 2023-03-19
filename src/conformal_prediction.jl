@@ -8,6 +8,7 @@ import Unzip: unzip
 import Match: @match
 
 function conformalize_λs(mdp, T_model, history, λs)::Array{<:Real}
+    n_calib = length(history)
     dset_s = getfield.(history, :s)
     dset_a = getfield.(history, :a)
     dset_s_ = getfield.(history, :sp)

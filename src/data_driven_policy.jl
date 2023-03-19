@@ -13,7 +13,7 @@ import Unzip: unzip
 
 ### BASIC LINEAR MODELS ###
 function create_linear_transition_model(mdp::MDP;
-                                        dry=false)::DSLinModel
+                                        dry=false, verbose=false)::DSLinModel
 
     nx, ny = mdp.size
     b0 = make_uniform_belief(mdp)
@@ -54,7 +54,7 @@ function create_linear_transition_model(mdp::MDP;
 
     @debug "Starting to fit linear classifier with $(length(Δ_states)) target classes."
     # solver = LBFGS(; optim_options=Optim.Options(show_trace=true, g_tol=1e-3, ))
-    solver = NewtonCG(; optim_options=Optim.Options(show_trace=true, g_tol=1e-3, ))
+    solver = NewtonCG(; optim_options=Optim.Options(show_trace=verbose, g_tol=1e-3, ))
     # Note: Choice of lambda quite influences the optimization problem.
     # Larger lambda -> faster optimization, but worse results.
     classifier = MultinomialClassifier(lambda=(dry ? 100. : 10.), penalty=:l2;
@@ -72,10 +72,11 @@ end
 
 ### TEMPERATURE SCALED MODELS ###
 function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP;
-                                                 dry=false, n_calib=(dry ? 10 : 100))::DSLinCalModel
+                                                 dry=false, n_calib=(dry ? 10 : 100),
+                                                 verbose=false)::DSLinCalModel
     nx, ny = mdp.size
     b0 = make_uniform_belief(mdp)
-    lin_model = create_linear_transition_model(mdp; dry=dry)
+    lin_model = create_linear_transition_model(mdp; dry=dry, verbose=verbose)
     calib_history = vcat([collect(simulate(HistoryRecorder(), mdp_calib, RandomPolicy(mdp_calib), rand(b0)))
                           for _ in 1:n_calib ]...);
 
@@ -93,21 +94,21 @@ function create_temp_calibrated_transition_model(mdp::MDP, mdp_calib::MDP;
     calibrated_model = DSLinCalModel(lin_model, T_best)
     return calibrated_model
 end
-create_temp_calibrated_transition_model(mdp::MDP; dry=false, n_calib=(dry ? 10 : 100)) =
-    create_temp_calibrated_transition_model(mdp, mdp; dry=dry, n_calib=n_calib)
+create_temp_calibrated_transition_model(mdp::MDP; dry=false, n_calib=(dry ? 10 : 100), verbose=false) =
+    create_temp_calibrated_transition_model(mdp, mdp; dry=dry, n_calib=n_calib, verbose=verbose)
 
 
 ### CONFORMALIZED MODELS ###
-function create_conformalized_transition_model(mdp_base, mdp_calib; dry=false, n_calib=(dry ? 10 : 100))
-    T_model = create_linear_transition_model(mdp_base; dry=dry)
+function create_conformalized_transition_model(mdp_base, mdp_calib; dry=false, n_calib=(dry ? 10 : 100), verbose=false)
+    T_model = create_linear_transition_model(mdp_base; dry=dry, verbose=verbose)
     λs::Array = 0.1:0.1:0.9; (!dry && append!(λs, [0.99]))
     history = vcat([collect(simulate(HistoryRecorder(), mdp_calib, RandomPolicy(mdp_calib), rand(make_uniform_belief(mdp_calib))))
                     for _ in 1:n_calib ]...);
     λs_hat = conformalize_λs(mdp_calib, T_model, history, λs)
     return DSConformalizedModel(T_model, Dict(zip(λs, λs_hat)))
 end
-create_conformalized_transition_model(mdp; dry=false, n_calib=(dry ? 10 : 100)) =
-    create_conformalized_transition_model(mdp, mdp; dry=dry)
+create_conformalized_transition_model(mdp; dry=false, n_calib=(dry ? 10 : 100), verbose=false) =
+    create_conformalized_transition_model(mdp, mdp; dry=dry, verbose=verbose)
 
 ### UTIL FUNCTIONS ###
 

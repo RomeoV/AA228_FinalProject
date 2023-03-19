@@ -10,26 +10,32 @@ import Plots: plot, plot!, pgfplotsx; # pgfplotsx()
 import StatsPlots: @df
 import Random: shuffle
 
-function run_experiments(; dry=false, outpath::Union{String, Nothing}=nothing)
+function run_experiments(; dry=false,
+                         outpath::Union{String, Nothing}=nothing,
+                         verbose=false)
     nx_vals = [10]  # ny is the same
-    agent_aggressiveness_vals = LinRange(0//1, 1//1, 3)
+    agent_aggressiveness_vals = LinRange(0//1, 1//1, (dry ? 2 : 7))
 
-    seed_vals = rand(UInt, 3)
-    policy_strat_vals = [:perfect, :conformalized, :temp_calibrated, :linear, :random]
+    seed_vals = rand(UInt, (dry ? 2 : 3))
+    policy_strats = [DSLinModel,
+                     DSLinCalModel,
+                     DSConformalizedModel,
+                     DSPerfectModel,
+                     DSRandomModel]
 
-    df = DataFrame([Int[], Float64[], UInt[], Symbol[], Float64[]],
+    df = DataFrame([Int[], Float64[], UInt[], String[], Float64[]],
                    [:nx, :agent_aggressiveness_p, :seed_val, :policy_strat, :score],
     )
 
     lck = ReentrantLock()
-    @floop for (nx, p, seed, pol) in product(nx_vals, 
-                                             agent_aggressiveness_vals,
-                                             seed_vals,
-                                             policy_strat_vals)
+    @floop for (nx, p, seed, pol) in product(nx_vals,
+                                      agent_aggressiveness_vals,
+                                      seed_vals,
+                                      policy_strats)
         @show (nx, p, seed, pol)
-        val = eval_problem(nx, p, pol; seed_val=seed, dry=dry)
+        val = eval_problem(pol, nx, p; seed_val=seed, dry=dry)
         lock(lck) do
-            push!(df, (nx, p, seed, pol, val))
+            push!(df, (nx, p, seed, string(pol)[3:end], val))
         end
     end
     sort!(df, [:agent_aggressiveness_p, :policy_strat])
@@ -39,29 +45,24 @@ function run_experiments(; dry=false, outpath::Union{String, Nothing}=nothing)
     return df
 end
 
-function get_conformalized_policy_under_domain_shift(P, Δp; p0=0.5, dry=false)
-    P.mdp.transition_model = DSPerfectModel()
-    P.mdp.agent_strategy = DSAgentStrat(p0)
-    mdp = P.mdp
+function get_conformalized_policy_under_domain_shift(mdp, Δp; p0=0.5, dry=false)
+    mdp.agent_strategy = DSAgentStrat(p0)
     mdp_shift = let mdp = deepcopy(mdp)
         mdp.agent_strategy = DSAgentStrat(p0 + Δp)
         mdp
     end
     conf_model = create_conformalized_transition_model(mdp, mdp_shift)
 
-    P.mdp.transition_model = conf_model
-    U = value_iteration_conformal(P.mdp; dry=dry);
-    POMDPTools.FunctionPolicy(s->runtime_policy_conformal(P.mdp, U, s));
+    U = value_iteration(mdp, conf_model; dry=dry);
+    POMDPTools.FunctionPolicy(s->runtime_policy(mdp, conf_model, U, s));
 end
 
-function get_linear_policy_under_domain_shift(P, Δp; p0=0.5, dry=false)
+function get_linear_policy_under_domain_shift(mdp, Δp; p0=0.5, dry=false)
     # currently ignores the domain shift
-    P.mdp.transition_model = DSPerfectModel()
-    P.mdp.agent_strategy = DSAgentStrat(p0)
-    T_model::DSLinModel = create_linear_transition_model(P.mdp)
-    P.mdp.transition_model = T_model
-    U = value_iteration(P.mdp; dry=dry);
-    POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
+    mdp.agent_strategy = DSAgentStrat(p0)
+    T_model::DSLinModel = create_linear_transition_model(mdp)
+    U = value_iteration(mdp, T_model; dry=dry);
+    POMDPTools.FunctionPolicy(s->runtime_policy(mdp, T_model, U, s));
 end
 
 function get_calibrated_linear_policy_under_domain_shift(P, Δp; p0=0.5, dry=false)

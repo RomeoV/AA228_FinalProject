@@ -9,7 +9,9 @@ import Base: product
 import StatsBase: mean
 import Match: @match
 
-function eval_problem(transition_model::Type{<:DSTransitionModel}, nx::Int, agent_strategy_p::Real;
+function eval_problem(transition_model::Type{<:DSTransitionModel},
+                      nx::Int,
+                      agent_strategy_p::Real;
                       seed_val=rand(UInt), verbose=false, dry=false)
     seed!(seed_val)
     mdp = DroneSurveillanceMDP{PerfectCam}(size=(nx, nx))
@@ -18,9 +20,9 @@ function eval_problem(transition_model::Type{<:DSTransitionModel}, nx::Int, agen
     transition_model = @match transition_model begin
         _::Type{DSPerfectModel} =>  DSPerfectModel(agent_strategy)
         _::Type{DSRandomModel} => DSRandomModel(mdp)
-        _::Type{DSLinModel}  => create_linear_transition_model(mdp; dry=dry)
-        _::Type{DSLinCalModel} => create_temp_calibrated_transition_model(mdp, mdp; dry=dry)
-        _::Type{DSConformalizedModel} => create_conformalized_transition_model(mdp, mdp; dry=dry)
+        _::Type{DSLinModel}  => create_linear_transition_model(mdp; dry=dry, verbose=verbose)
+        _::Type{DSLinCalModel} => create_temp_calibrated_transition_model(mdp, mdp; dry=dry, verbose=verbose)
+        _::Type{DSConformalizedModel} => create_conformalized_transition_model(mdp, mdp; dry=dry, verbose=verbose)
         _ => error("unknown transition model")
     end
     @debug "Finished creating model."
@@ -82,8 +84,7 @@ function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSTransitionModel;
     for i in 1:(dry ? 5 : 50)
         @debug "Loop: $i"
         U_ = U  # Alternative: U_ = copy(U)
-        #@floop
-        for s in nonterminal_states
+        @floop for s in nonterminal_states
             U[s] = maximum(
                      a -> let r = reward(mdp, s, a),
                               T_probs = DroneSurveillance.transition(mdp, T_model, s, a),
