@@ -1,5 +1,6 @@
 using DataFrames
 using DroneSurveillance
+import DroneSurveillance: DSAgentStrat, DSTransitionModel, DSPerfectModel, DSLinModel, DSLinCalModel, DSConformalizedModel, DSRandomModel
 import POMDPTools
 import CSV
 import Base: product
@@ -45,87 +46,65 @@ function run_experiments(; dry=false,
     return df
 end
 
-function get_conformalized_policy_under_domain_shift(mdp, Δp; p0=0.5, dry=false)
-    mdp.agent_strategy = DSAgentStrat(p0)
+function eval_domain_shift(transition_model::Type{<:DSTransitionModel},
+                           nx::Int,
+                           agent_strategy_Δp::Real;
+                           p0=0.5,
+                           seed_val=rand(UInt), verbose=false, dry=false)
+    seed!(seed_val)
+    mdp = DroneSurveillanceMDP{PerfectCam}(size=(nx, nx), agent_strategy=DSAgentStrat(p0))
     mdp_shift = let mdp = deepcopy(mdp)
-        mdp.agent_strategy = DSAgentStrat(p0 + Δp)
+        mdp.agent_strategy = DSAgentStrat(p0 + agent_strategy_Δp)
         mdp
     end
-    conf_model = create_conformalized_transition_model(mdp, mdp_shift)
 
-    U = value_iteration(mdp, conf_model; dry=dry);
-    POMDPTools.FunctionPolicy(s->runtime_policy(mdp, conf_model, U, s));
-end
-
-function get_linear_policy_under_domain_shift(mdp, Δp; p0=0.5, dry=false)
-    # currently ignores the domain shift
-    mdp.agent_strategy = DSAgentStrat(p0)
-    T_model::DSLinModel = create_linear_transition_model(mdp)
-    U = value_iteration(mdp, T_model; dry=dry);
-    POMDPTools.FunctionPolicy(s->runtime_policy(mdp, T_model, U, s));
-end
-
-function get_calibrated_linear_policy_under_domain_shift(P, Δp; p0=0.5, dry=false)
-    P.mdp.transition_model = DSPerfectModel()
-    P.mdp.agent_strategy = DSAgentStrat(p0)
-    mdp = P.mdp
-    mdp_shift = let mdp = deepcopy(mdp)
-        mdp.agent_strategy = DSAgentStrat(p0 + Δp)
-        mdp
+    transition_model = @match transition_model begin
+        _::Type{DSPerfectModel} =>  DSPerfectModel(mdp_shift.agent_strategy)
+        _::Type{DSRandomModel} => DSRandomModel(mdp_shift)
+        _::Type{DSLinModel}  => create_linear_transition_model(mdp; dry=dry, verbose=verbose)
+        _::Type{DSLinCalModel} => create_temp_calibrated_transition_model(mdp, mdp_shift; dry=dry, verbose=verbose)
+        _::Type{DSConformalizedModel} => create_conformalized_transition_model(mdp, mdp_shift; dry=dry, verbose=verbose)
+        _ => error("unknown transition model")
     end
-    calib_model = create_temp_calibrated_transition_model(mdp, mdp_shift)
+    @debug "Finished creating model."
+    U = value_iteration(mdp, transition_model; dry=dry);
+    policy = POMDPTools.FunctionPolicy(s->runtime_policy(mdp_shift, transition_model, U, s))
 
-    P.mdp.transition_model = calib_model
-    U = value_iteration(P.mdp; dry=dry);
-    POMDPTools.FunctionPolicy(s->runtime_policy(P.mdp, U, s));
+    initial_state = DSState([1, 1], [ceil(Int, (nx + 1) / 2), ceil(Int, (nx + 1) / 2)])
+    U_π = policy_evaluation(mdp_shift, mdp_shift.agent_strategy, policy;
+                            trace_state=(verbose ? initial_state : nothing),
+                            dry=dry)
+    policy_value = U_π[initial_state]
+    return policy_value
 end
 
 function run_domain_shift_experiments(; dry=false, outpath::Union{String, Nothing}=nothing, verbose=false)
     nx_vals = [10]  # ny is the same
-    agent_aggressiveness_deltas = [0., 0.2, 0.4]
-    # agent_aggressiveness_vals = [0., 0.5, 1.0]
+    agent_aggressiveness_deltas = LinRange(-1//2, 1//2, (dry ? 2 : 7))
 
-    seed_vals = rand(UInt, 3)
-    policy_strat_vals = [:conformalized, :linear, :temp_calibrated]
+    seed_vals = rand(UInt, (dry ? 2 : 3))
+    policy_strats = [DSLinModel,
+                     DSLinCalModel,
+                     DSConformalizedModel,
+                     DSPerfectModel,
+                     DSRandomModel]
 
-    df = DataFrame([Int[], Float64[], UInt[], Symbol[], Float64[]],
-                   [:nx, :agent_aggressiveness_delta, :seed_val, :policy_strat, :score],
+    df = DataFrame([Int[], Float64[], UInt[], String[], Float64[]],
+                   [:nx, :agent_aggressiveness_delta_p, :seed_val, :policy_strat, :score],
     )
 
     lck = ReentrantLock()
-    for (nx, Δp, seed, pol) in product(nx_vals, 
-                                              agent_aggressiveness_deltas,
-                                              seed_vals,
-                                              policy_strat_vals)
+    @floop for (nx, Δp, seed, pol) in product(nx_vals,
+                                       agent_aggressiveness_deltas,
+                                       seed_vals,
+                                       policy_strats)
         @show (nx, Δp, seed, pol)
-        policy_value = begin
-            P = make_P()
-            P.mdp.size = (nx, nx)
-            P.mdp.transition_model = DSPerfectModel()
-            policy = if pol == :linear
-                get_linear_policy_under_domain_shift(deepcopy(P), Δp)
-            elseif pol == :conformalized
-                get_conformalized_policy_under_domain_shift(deepcopy(P), Δp)
-            elseif pol == :temp_calibrated
-                get_calibrated_linear_policy_under_domain_shift(deepcopy(P), Δp)
-            else
-                @error "invalid policy type"
-            end
-            initial_state = DSState([1, 1], [ceil((nx + 1) / 2), ceil((nx + 1) / 2)])
-            @assert P.mdp.transition_model isa DSPerfectModel
-            P.mdp.agent_strategy = DSAgentStrat(0.5+Δp)
-            U_π = policy_evaluation(P.mdp, policy;
-                                    trace_state=(verbose ? initial_state : nothing),
-                                    dry=dry)
-            U_π[initial_state]
-        end
-
+        val = eval_domain_shift(pol, nx, Δp; seed_val=seed, dry=dry)
         lock(lck) do
-            push!(df, (nx, Δp, seed, pol, policy_value))
+            push!(df, (nx, Δp, seed, string(pol)[3:end], val))
         end
     end
-
-    sort!(df, [:agent_aggressiveness_delta, :policy_strat])
+    sort!(df, [:agent_aggressiveness_delta_p, :policy_strat])
     if !isnothing(outpath)
         CSV.write(outpath, df)
     end
