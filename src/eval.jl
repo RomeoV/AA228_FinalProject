@@ -17,12 +17,13 @@ function eval_problem(transition_model::Type{<:DSTransitionModel}, nx::Int, agen
 
     transition_model = @match transition_model begin
         _::Type{DSPerfectModel} =>  DSPerfectModel(agent_strategy)
-        _::Type{DSRandomModel} => DSRandomModel()
-        _::Type{DSLinModel}  => create_linear_transition_model(mdp)
-        _::Type{DSLinCalModel} => create_temp_calibrated_transition_model(mdp, mdp)
-        _::Type{DSConformalizedModel} => create_conformalized_transition_model(mdp, mdp)
+        _::Type{DSRandomModel} => DSRandomModel(mdp)
+        _::Type{DSLinModel}  => create_linear_transition_model(mdp; dry=dry)
+        _::Type{DSLinCalModel} => create_temp_calibrated_transition_model(mdp, mdp; dry=dry)
+        _::Type{DSConformalizedModel} => create_conformalized_transition_model(mdp, mdp; dry=dry)
         _ => error("unknown transition model")
     end
+    @debug "Finished creating model."
     U = value_iteration(mdp, transition_model; dry=dry);
     policy = POMDPTools.FunctionPolicy(s->runtime_policy(mdp, transition_model, U, s))
 
@@ -67,7 +68,7 @@ end
 function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSTransitionModel;
                          trace_state::Union{Nothing, DSState}=nothing,
                          dry=false)
-    @info "hello2"
+    @debug "Staring value iteration (regular model)"
     nx, ny = mdp.size
     γ = mdp.discount_factor
     nonterminal_states = [DSState([qx, qy], [ax, ay])
@@ -79,8 +80,10 @@ function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSTransitionModel;
     U = Dict(s=>rand() for s in nonterminal_states)
     U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
     for i in 1:(dry ? 5 : 50)
+        @debug "Loop: $i"
         U_ = U  # Alternative: U_ = copy(U)
-        @floop for s in nonterminal_states
+        #@floop
+        for s in nonterminal_states
             U[s] = maximum(
                      a -> let r = reward(mdp, s, a),
                               T_probs = DroneSurveillance.transition(mdp, T_model, s, a),
@@ -98,6 +101,7 @@ end
 function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSConformalizedModel;
                          trace_state::Union{Nothing, DSState}=nothing,
                          dry=false)
+    @debug "Staring value iteration (conformalized model)"
     nx, ny = mdp.size
     γ = mdp.discount_factor
     nonterminal_states = [DSState([qx, qy], [ax, ay])
@@ -114,7 +118,7 @@ function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSConformalizedMode
         @floop for s in nonterminal_states
             U[s] = maximum(a->let r = reward(mdp, s, a),
                                   γ = mdp.discount_factor,
-                                  Δs_pred = transition(mdp, T_model, s, a);
+                                  Δs_pred = DroneSurveillance.transition(mdp, T_model, s, a);
                                r + γ * conformal_expectation(U_, Δs_pred)
                            end,
                            ACTION_DIRS)
