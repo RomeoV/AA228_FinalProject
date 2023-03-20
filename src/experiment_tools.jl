@@ -17,7 +17,7 @@ function run_experiments(; dry=false,
     nx_vals = [10]  # ny is the same
     agent_aggressiveness_vals = LinRange(0//1, 1//1, (dry ? 2 : 7))
 
-    seed_vals = rand(UInt, (dry ? 2 : 3))
+    seed_vals = rand(UInt, (dry ? 1 : 1))
     policy_strats = [DSLinModel,
                      DSLinCalModel,
                      DSConformalizedModel,
@@ -36,7 +36,9 @@ function run_experiments(; dry=false,
         @show (nx, p, seed, pol)
         val = eval_problem(pol, nx, p; seed_val=seed, dry=dry)
         lock(lck) do
-            push!(df, (nx, p, seed, string(pol)[3:end], val))
+            row = (nx, p, seed, string(pol)[3:end], val)
+            @show row
+            push!(df, row)
         end
     end
     sort!(df, [:agent_aggressiveness_p, :policy_strat])

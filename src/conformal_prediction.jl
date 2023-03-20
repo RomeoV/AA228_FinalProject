@@ -39,7 +39,7 @@ function conformalize_λs(mdp, T_model, history, λs)::Array{<:Real}
 end
 
 "Currently implements variant 1 from the writeup."
-function conformal_expectation(U::Dict{DSState, <:Real}, C_T::Dict{<:Real, Set{DSState}})
+function conformal_expectation(U::AbstractDict{DSState, <:Real}, C_T::AbstractDict{<:Real, Set{DSState}})
     # return 0 if prediction set is empty
     mean_(f, set::Set) = (set == Set() ? 0 : mean(f, set))
 

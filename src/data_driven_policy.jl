@@ -101,10 +101,12 @@ create_temp_calibrated_transition_model(mdp::MDP; dry=false, n_calib=(dry ? 10 :
 ### CONFORMALIZED MODELS ###
 function create_conformalized_transition_model(mdp_base, mdp_calib; dry=false, n_calib=(dry ? 10 : 100), verbose=false)
     T_model = create_linear_transition_model(mdp_base; dry=dry, verbose=verbose)
+    @debug "Starting conformalization"
     λs::Array = 0.1:0.1:0.9; (!dry && append!(λs, [0.99]))
     history = vcat([collect(simulate(HistoryRecorder(), mdp_calib, RandomPolicy(mdp_calib), rand(make_uniform_belief(mdp_calib))))
                     for _ in 1:n_calib ]...);
     λs_hat = conformalize_λs(mdp_calib, T_model, history, λs)
+    @debug "Finished conformalization"
     return DSConformalizedModel(T_model, Dict(zip(λs, λs_hat)))
 end
 create_conformalized_transition_model(mdp; dry=false, n_calib=(dry ? 10 : 100), verbose=false) =

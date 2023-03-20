@@ -8,6 +8,7 @@ import POMDPTools: weighted_iterator, Deterministic
 import Base: product
 import StatsBase: mean
 import Match: @match
+using OrderedCollections: OrderedDict
 
 function eval_problem(transition_model::Type{<:DSTransitionModel},
                       nx::Int,
@@ -26,10 +27,10 @@ function eval_problem(transition_model::Type{<:DSTransitionModel},
         _ => error("unknown transition model")
     end
     @debug "Finished creating model."
-    U = value_iteration(mdp, transition_model; dry=dry);
+    initial_state = DSState([1, 1], [ceil(Int, (nx + 1) / 2), ceil(Int, (nx + 1) / 2)])
+    U = value_iteration(mdp, transition_model; dry=dry, trace_state=(verbose ? initial_state : nothing));
     policy = POMDPTools.FunctionPolicy(s->runtime_policy(mdp, transition_model, U, s))
 
-    initial_state = DSState([1, 1], [ceil(Int, (nx + 1) / 2), ceil(Int, (nx + 1) / 2)])
     U_π = policy_evaluation(mdp, agent_strategy, policy;
                             trace_state=(verbose ? initial_state : nothing),
                             dry=dry)
@@ -48,11 +49,12 @@ function policy_evaluation(mdp::DroneSurveillanceMDP, agent_strategy::DSAgentStr
                               ax in 1:nx,
                               ay in 1:ny][:]  # <- we flatten here!
 
-    U = Dict(s=>rand() for s in nonterminal_states)
+    U = OrderedDict{DSState, Float64}(s=>rand() for s in nonterminal_states)
     U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
     for i in 1:(dry ? 5 : 50)
+        @debug "Loop: $i"
         U_ = U  # Alternative: U_ = copy(U)
-        for s in nonterminal_states
+        @floop for s in nonterminal_states
             U[s] = let a = action(policy, s),
                        r = reward(mdp, s, a),
                        # note that we use the true transition model here!
@@ -79,7 +81,7 @@ function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSTransitionModel;
                               ax in 1:nx,
                               ay in 1:ny][:]  # note that we flatten the array in the end
 
-    U = Dict(s=>rand() for s in nonterminal_states)
+    U = OrderedDict{DSState, Float64}(s=>rand() for s in nonterminal_states)
     U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
     for i in 1:(dry ? 5 : 50)
         @debug "Loop: $i"
@@ -111,16 +113,17 @@ function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSConformalizedMode
                               ax in 1:nx,
                               ay in 1:ny][:]  # note that we flatten the array in the end
 
-    U = Dict(s=>rand() for s in nonterminal_states)
+    U = OrderedDict{DSState, Float64}(s=>rand() for s in nonterminal_states)
     U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
 
-    for _ in 1:(dry ? 5 : 50)
+    for i in 1:(dry ? 5 : 50)
+        @debug "Loop: $i"
         U_ = U  # Alternative: U_ = copy(U)
         @floop for s in nonterminal_states
             U[s] = maximum(a->let r = reward(mdp, s, a),
                                   γ = mdp.discount_factor,
-                                  Δs_pred = DroneSurveillance.transition(mdp, T_model, s, a);
-                               r + γ * conformal_expectation(U_, Δs_pred)
+                                  C_T = DroneSurveillance.transition(mdp, T_model, s, a);
+                               r + γ * conformal_expectation(U_, C_T)
                            end,
                            ACTION_DIRS)
         end
