@@ -89,7 +89,7 @@ function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSTransitionModel;
         @floop for s in nonterminal_states
             U[s] = maximum(
                      a -> let r = reward(mdp, s, a),
-                              T_probs = DroneSurveillance.transition(mdp, T_model, s, a),
+                              T_probs = DroneSurveillance.transition(mdp, T_model, s, a; ϵ_prune=1e-3),
                               T_iter = weighted_iterator(T_probs)
                          r + γ * sum(p*U_[s_]
                                      for (s_, p) in T_iter)
