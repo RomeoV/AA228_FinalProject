@@ -13,11 +13,11 @@ import Random: shuffle
 
 function run_experiments(; dry=false,
                          outpath::Union{String, Nothing}=nothing,
-                         verbose=false)
+                         verbose=false, n_seeds=(dry ? 1 : 5))
     nx_vals = [10]  # ny is the same
     agent_aggressiveness_vals = LinRange(0//1, 1//1, (dry ? 2 : 7))
 
-    seed_vals = rand(UInt, (dry ? 1 : 1))
+    seed_vals = rand(UInt, n_seeds)
     policy_strats = [DSLinModel,
                      DSLinCalModel,
                      DSConformalizedModel,
