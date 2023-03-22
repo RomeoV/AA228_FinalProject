@@ -1,4 +1,4 @@
-import FLoops: @floop
+import FLoops: @floop, SequentialEx, ThreadedEx
 import Random: seed!
 import DroneSurveillance: ACTION_DIRS, DSAgentStrat, DSPerfectModel, PerfectCam
 import DroneSurveillance: ACTION_DIRS, DSTransitionModel, DSLinModel, DSLinCalModel, DSConformalizedModel, DSRandomModel
@@ -13,7 +13,7 @@ using OrderedCollections: OrderedDict
 function eval_problem(transition_model::Type{<:DSTransitionModel},
                       nx::Int,
                       agent_strategy_p::Real;
-                      seed_val=rand(UInt), verbose=false, dry=false)
+                      seed_val=rand(UInt), verbose=false, dry=false, parallel=true)
     seed!(seed_val)
     mdp = DroneSurveillanceMDP{PerfectCam}(size=(nx, nx))
     agent_strategy = DSAgentStrat(agent_strategy_p)
@@ -28,18 +28,18 @@ function eval_problem(transition_model::Type{<:DSTransitionModel},
     end
     @debug "Finished creating model."
     initial_state = DSState([1, 1], [ceil(Int, (nx + 1) / 2), ceil(Int, (nx + 1) / 2)])
-    U = value_iteration(mdp, transition_model; dry=dry, trace_state=(verbose ? initial_state : nothing));
+    U = value_iteration(mdp, transition_model; dry=dry, trace_state=(verbose ? initial_state : nothing), parallel=parallel);
     policy = POMDPTools.FunctionPolicy(s->runtime_policy(mdp, transition_model, U, s))
 
     U_π = policy_evaluation(mdp, agent_strategy, policy;
                             trace_state=(verbose ? initial_state : nothing),
-                            dry=dry)
+                            dry=dry, parallel=parallel)
     policy_value = U_π[initial_state]
     return policy_value
 end
 
 function policy_evaluation(mdp::DroneSurveillanceMDP, agent_strategy::DSAgentStrat, policy::Policy;
-                           trace_state::Union{Nothing, DSState}=nothing, dry=false)
+                           trace_state::Union{Nothing, DSState}=nothing, dry=false, parallel=true)
     T_model = DSPerfectModel(agent_strategy)
     nx, ny = mdp.size
     γ = mdp.discount_factor
@@ -49,12 +49,13 @@ function policy_evaluation(mdp::DroneSurveillanceMDP, agent_strategy::DSAgentStr
                               ax in 1:nx,
                               ay in 1:ny][:]  # <- we flatten here!
 
-    U = OrderedDict{DSState, Float64}(s=>rand() for s in nonterminal_states)
+    U = Dict{DSState, Float64}(s=>rand() for s in nonterminal_states)
     U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
+    par_exec = (parallel ? ThreadedEx() : SequentialEx())
     for i in 1:(dry ? 5 : 50)
         @debug "Loop: $i"
         U_ = U  # Alternative: U_ = copy(U)
-        @floop for s in nonterminal_states
+        @floop par_exec for s in nonterminal_states
             U[s] = let a = action(policy, s),
                        r = reward(mdp, s, a),
                        # note that we use the true transition model here!
@@ -71,7 +72,7 @@ end
 
 function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSTransitionModel;
                          trace_state::Union{Nothing, DSState}=nothing,
-                         dry=false)
+                         dry=false, parallel=true)
     @debug "Staring value iteration (regular model)"
     nx, ny = mdp.size
     γ = mdp.discount_factor
@@ -81,12 +82,13 @@ function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSTransitionModel;
                               ax in 1:nx,
                               ay in 1:ny][:]  # note that we flatten the array in the end
 
-    U = OrderedDict{DSState, Float64}(s=>rand() for s in nonterminal_states)
+    U = Dict{DSState, Float64}(s=>rand() for s in nonterminal_states)
     U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
-    for i in 1:(dry ? 5 : 50)
+    par_exec = (parallel ? ThreadedEx() : SequentialEx())
+    for i in 1:(dry ? 5 : 25)
         @debug "Loop: $i"
         U_ = U  # Alternative: U_ = copy(U)
-        @floop for s in nonterminal_states
+        @floop par_exec for s in nonterminal_states
             U[s] = maximum(
                      a -> let r = reward(mdp, s, a),
                               T_probs = DroneSurveillance.transition(mdp, T_model, s, a; ϵ_prune=1e-3),
@@ -103,7 +105,7 @@ end
 
 function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSConformalizedModel;
                          trace_state::Union{Nothing, DSState}=nothing,
-                         dry=false)
+                         dry=false, parallel=true)
     @debug "Staring value iteration (conformalized model)"
     nx, ny = mdp.size
     γ = mdp.discount_factor
@@ -113,13 +115,14 @@ function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSConformalizedMode
                               ax in 1:nx,
                               ay in 1:ny][:]  # note that we flatten the array in the end
 
-    U = OrderedDict{DSState, Float64}(s=>rand() for s in nonterminal_states)
+    U = Dict{DSState, Float64}(s=>rand() for s in nonterminal_states)
     U[mdp.terminal_state] = reward(mdp, mdp.terminal_state, rand(ACTION_DIRS))
 
-    for i in 1:(dry ? 5 : 50)
+    par_exec = (parallel ? ThreadedEx() : SequentialEx())
+    for i in 1:(dry ? 5 : 25)
         @debug "Loop: $i"
         U_ = U  # Alternative: U_ = copy(U)
-        @floop for s in nonterminal_states
+        @floop par_exec for s in nonterminal_states
             U[s] = maximum(a->let r = reward(mdp, s, a),
                                   γ = mdp.discount_factor,
                                   C_T = DroneSurveillance.transition(mdp, T_model, s, a);

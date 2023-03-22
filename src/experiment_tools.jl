@@ -34,7 +34,7 @@ function run_experiments(; dry=false,
                                       seed_vals,
                                       policy_strats)
         @show (nx, p, seed, pol)
-        val = eval_problem(pol, nx, p; seed_val=seed, dry=dry)
+        val = eval_problem(pol, nx, p; seed_val=seed, dry=dry, parallel=false)
         lock(lck) do
             row = (nx, p, seed, string(pol)[3:end], val)
             @show row
