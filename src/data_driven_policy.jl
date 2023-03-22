@@ -38,7 +38,6 @@ function create_linear_transition_model(mdp::MDP;
     Δ_states = [(Δx, Δy) for Δx in -nx:nx,
                              Δy in -ny:ny][:]
     push!(Δ_states, -2 .* mdp.size)  # this is the "code" for moving to the terminal state
-    label(Δx, Δy) = findfirst(==((Δx, Δy)), Δ_states)
 
     # turn the matrix into a named tuple of (continuous) colums
     ξs_tbl = begin
@@ -48,6 +47,7 @@ function create_linear_transition_model(mdp::MDP;
     end
 
     # we predict the index of the Δ-state
+    label(Δx, Δy) = findfirst(==((Δx, Δy)), Δ_states)
     Δs_ind = label.(Δxs, Δys)
     @assert !any(isnothing, Δs_ind) let idx=findfirst(nothing, Δ_states); "$((Δxs[idx], Δys[idx]))" end
     Δs_cat = MLJ.categorical(Δs_ind, levels=1:length(Δ_states))
@@ -118,7 +118,7 @@ create_conformalized_transition_model(mdp; dry=false, n_calib=(dry ? 10 : 100), 
 function process_row(mdp, (s, a, sp, r, info, t, action_info)::NamedTuple)
     Δx, Δy = s.agent.x - s.quad.x, s.agent.y - s.quad.y
     Δx_next, Δy_next = if sp != mdp.terminal_state
-        sp.agent.x - sp.quad.x, sp.agent.y - sp.quad.y
+        sp.agent - sp.quad
     else
         -2 .* mdp.size
     end
