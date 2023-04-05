@@ -8,7 +8,7 @@ import Unzip: unzip
 import Match: @match
 import Integrals: IntegralProblem, QuadGKJL, solve
 import IntervalSets: AbstractInterval, Interval, width
-using IntervalSets  # .. operator
+import IntervalSets: (..)
 import DataStructures: SortedDict
 import Base.Order: Ordering
 
@@ -43,6 +43,7 @@ function conformalize_λs(mdp, T_model, history, λs)::Array{<:Real}
     return λs_hat
 end
 
+#### Variant 1
 "Currently implements variant 1 from the writeup."
 function conformal_expectation(U::AbstractDict{DSState, <:Real}, C_T::SortedDict{<:Real, Set{DSState}})
     # return 0 if prediction set is empty
@@ -53,7 +54,7 @@ function conformal_expectation(U::AbstractDict{DSState, <:Real}, C_T::SortedDict
     sum(λ -> w[λ]*mean_(s->U[s], C_T[λ]),
         λs)
 end
-# 1D interval version
+# set version
 function conformal_expectation(g::Function, C_T::AbstractDict{<:Real, <:Interval})
     # return 0 if prediction set is empty
     integrate_(f, interval::Interval) = (interval.left >= interval.right ? 0 :
@@ -66,51 +67,46 @@ function conformal_expectation(g::Function, C_T::AbstractDict{<:Real, <:Interval
         λs)
 end
 
-function conformal_expectation_2(U::AbstractDict{DSState, <:Real}, C_T::SortedDict{<:Real, Set{DSState}})
-    # return 0 if prediction set is empty
-    mean_(f, set::Set) = (set == Set() ? 0 : mean(f, set))
-
-    λs = keys(C_T)
-    λ_pairs = zip(λs[1:end-1], λs[2:end])
-    sum(((λ_lhs, λ_rhs),) -> begin
-            w = λ_rhs - λ_lhs
-            X_diff = setdiff(C_T[λ_rhs], C_T[λ_lhs])
-            w * mean(s->U[s], X_diff)
-        end,
-        λ_pairs)
-end
-
-### 1D interval version
-# case without LOTUS / g(x)
-conformal_expectation_2(C_T::SortedDict{<:Real, <:Interval, <:Ordering}) =
+#### Variant 2
+# expectation without g
+conformal_expectation_2(C_T::Union{SortedDict{<:Real, <:Interval, <:Ordering},
+                                   SortedDict{<:Real, <:Set, <:Ordering}}) =
     conformal_expectation_2(identity, C_T)
-# case with LOTUS / g(x)
-function conformal_expectation_2(g::Function, C_T::SortedDict{<:Real, <:Interval, <:Ordering})
-    # return 0 if prediction set is empty
-    integrate_(f, interval::Interval) = (interval.left >= interval.right ? 0 :
-        solve(IntegralProblem((x, p)->f(x), interval.left, interval.right),
-              QuadGKJL()) |> first)
 
-    C_T[0//1] = let μ = mean(first(C_T).second)
-        ClosedInterval(μ, μ)  # empty prediction between the first prediction, to avoid some problems
-        # otherwise, our aggregation of the prediction interval doesn't work (see assert below)
-    end
+# set version
+function conformal_expectation_2(g::Function, C_T::SortedDict{<:Real, Set{DSState}})
+    # return 0 if prediction set is empty
+    mean_(g, set::Set) = (set == Set() ? 0 : mean(g, set))
+
     λs = collect(keys(C_T)); @assert issorted(λs)
-    @info λs
+    ws = diff(λs)
     λ_pairs = zip(λs[1:end-1], λs[2:end])
     sum(((λ_lo, λ_hi),) -> begin
-            w = λ_hi - λ_lo; @assert w>0
-            pred_lo, pred_hi = C_T[λ_lo], C_T[λ_hi]
-            @assert (pred_hi.left <= pred_lo.left <= pred_lo.right <= pred_hi.right) "$pred_lo ; $pred_hi"
-            X_rhs = pred_lo.right..pred_hi.right
-            X_lhs = pred_hi.left..pred_lo.left
-            retval = w*(integrate_(g, X_rhs)/width(X_rhs)  + integrate_(g, X_lhs)/width(X_lhs))
-            @show retval
-            (isnan(retval) ? 0. : retval)
+            X_λ± = setdiff(C_T[λ_hi], C_T[λ_lo])
+            (λ_hi-λ_lo) * mean_(g, X_λ±) / 2
         end,
-        λ_pairs)
+        λ_pairs) * 1/maximum(λs)
 end
 
+# 1D interval version
+function conformal_expectation_2(g::Function, C_T::SortedDict{<:Real, <:Interval, <:Ordering})
+    # return 0 if prediction set is empty
+    mean_(f, interval::Interval) = (interval.left >= interval.right ? 0 :
+        solve(IntegralProblem((x, p)->f(x), interval.left, interval.right),
+              QuadGKJL()) |> first) / width(interval)
+
+    λs = collect(keys(C_T)); @assert issorted(λs)
+    ws = diff(λs)
+    λ_pairs = zip(λs[1:end-1], λs[2:end])
+    sum(((λ_lo, λ_hi),) -> begin
+            pred_lo, pred_hi = C_T[λ_lo], C_T[λ_hi];  @assert (pred_hi.left <= pred_lo.left <= pred_lo.right <= pred_hi.right) "$pred_lo ; $pred_hi"
+            X_lhs, X_rhs = pred_hi.left..pred_lo.left, pred_lo.right..pred_hi.right
+            (λ_hi-λ_lo) * ( mean_(g, X_rhs) + mean_(g, X_lhs) ) / 2
+        end,
+        λ_pairs) * 1/maximum(λs)
+end
+
+#### Variant 3
 function conformal_expectation_3(U::AbstractDict{DSState, <:Real}, C_T::SortedDict{<:Real, Set{DSState}, <:Ordering})
     # return 0 if prediction set is empty
     mean_(f, set::Set) = (set == Set() ? 0 : mean(f, set))
