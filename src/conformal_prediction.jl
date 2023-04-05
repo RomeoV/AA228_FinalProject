@@ -6,6 +6,11 @@ import DroneSurveillance: predict
 import StatsBase: quantile
 import Unzip: unzip
 import Match: @match
+import Integrals: IntegralProblem, QuadGKJL, solve
+import IntervalSets: AbstractInterval, Interval, width
+using IntervalSets  # .. operator
+import DataStructures: SortedDict
+import Base.Order: Ordering
 
 function conformalize_λs(mdp, T_model, history, λs)::Array{<:Real}
     n_calib = length(history)
@@ -39,13 +44,82 @@ function conformalize_λs(mdp, T_model, history, λs)::Array{<:Real}
 end
 
 "Currently implements variant 1 from the writeup."
-function conformal_expectation(U::AbstractDict{DSState, <:Real}, C_T::AbstractDict{<:Real, Set{DSState}})
+function conformal_expectation(U::AbstractDict{DSState, <:Real}, C_T::SortedDict{<:Real, Set{DSState}})
     # return 0 if prediction set is empty
     mean_(f, set::Set) = (set == Set() ? 0 : mean(f, set))
 
-    # TODO: Implement other variants
     λs = keys(C_T)
     w = Dict(λ => 1/length(λs) for λ in λs)
     sum(λ -> w[λ]*mean_(s->U[s], C_T[λ]),
         λs)
+end
+# 1D interval version
+function conformal_expectation(g::Function, C_T::AbstractDict{<:Real, <:Interval})
+    # return 0 if prediction set is empty
+    integrate_(f, interval::Interval) = (interval.left >= interval.right ? 0 :
+        solve(IntegralProblem((x, p)->f(x), interval.left, interval.right),
+              QuadGKJL()) |> first)
+
+    λs = keys(C_T)
+    w = Dict(λ => 1/length(λs) for λ in λs)
+    sum(λ -> w[λ]*(integrate_(g, C_T[λ]) / width(C_T[λ])),
+        λs)
+end
+
+function conformal_expectation_2(U::AbstractDict{DSState, <:Real}, C_T::SortedDict{<:Real, Set{DSState}})
+    # return 0 if prediction set is empty
+    mean_(f, set::Set) = (set == Set() ? 0 : mean(f, set))
+
+    λs = keys(C_T)
+    λ_pairs = zip(λs[1:end-1], λs[2:end])
+    sum(((λ_lhs, λ_rhs),) -> begin
+            w = λ_rhs - λ_lhs
+            X_diff = setdiff(C_T[λ_rhs], C_T[λ_lhs])
+            w * mean(s->U[s], X_diff)
+        end,
+        λ_pairs)
+end
+
+### 1D interval version
+# case without LOTUS / g(x)
+conformal_expectation_2(C_T::SortedDict{<:Real, <:Interval, <:Ordering}) =
+    conformal_expectation_2(identity, C_T)
+# case with LOTUS / g(x)
+function conformal_expectation_2(g::Function, C_T::SortedDict{<:Real, <:Interval, <:Ordering})
+    # return 0 if prediction set is empty
+    integrate_(f, interval::Interval) = (interval.left >= interval.right ? 0 :
+        solve(IntegralProblem((x, p)->f(x), interval.left, interval.right),
+              QuadGKJL()) |> first)
+
+    C_T[0//1] = let μ = mean(first(C_T).second)
+        ClosedInterval(μ, μ)  # empty prediction between the first prediction, to avoid some problems
+        # otherwise, our aggregation of the prediction interval doesn't work (see assert below)
+    end
+    λs = collect(keys(C_T)); @assert issorted(λs)
+    @info λs
+    λ_pairs = zip(λs[1:end-1], λs[2:end])
+    sum(((λ_lo, λ_hi),) -> begin
+            w = λ_hi - λ_lo; @assert w>0
+            pred_lo, pred_hi = C_T[λ_lo], C_T[λ_hi]
+            @assert (pred_hi.left <= pred_lo.left <= pred_lo.right <= pred_hi.right) "$pred_lo ; $pred_hi"
+            X_rhs = pred_lo.right..pred_hi.right
+            X_lhs = pred_hi.left..pred_lo.left
+            retval = w*(integrate_(g, X_rhs)/width(X_rhs)  + integrate_(g, X_lhs)/width(X_lhs))
+            @show retval
+            (isnan(retval) ? 0. : retval)
+        end,
+        λ_pairs)
+end
+
+function conformal_expectation_3(U::AbstractDict{DSState, <:Real}, C_T::SortedDict{<:Real, Set{DSState}, <:Ordering})
+    # return 0 if prediction set is empty
+    mean_(f, set::Set) = (set == Set() ? 0 : mean(f, set))
+
+    λs = keys(C_T)
+    λ_pairs = zip(λs[1:end-1], λs[2:end])
+    sum(((λ_lhs, λ_rhs),) -> begin
+            w = λ_rhs - λ_lhs
+            w * mean(s->U[s], C_T[λ_rhs]) - mean(s->U[s], C_T[λ_lhs])
+        end,
+        λ_pairs)
 end
