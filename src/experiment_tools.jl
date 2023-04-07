@@ -43,6 +43,7 @@ function run_experiments(; dry=false,
     end
     sort!(df, [:agent_aggressiveness_p, :policy_strat])
     if !isnothing(outpath)
+        while isfile(outpath); outpath = string(outpath, "_"); end
         CSV.write(outpath, df)
     end
     return df
