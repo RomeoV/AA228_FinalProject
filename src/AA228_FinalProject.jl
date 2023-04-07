@@ -3,10 +3,10 @@ using UnicodePlots
 using DroneSurveillance
 include("util.jl")
 include("policies.jl")
+include("conformal_prediction.jl")
 include("eval.jl")
 include("experiment_tools.jl")
 include("data_driven_policy.jl")
-include("conformal_prediction.jl")
 include("measure_calibration.jl")
 
 export make_DroneSurveillance_MDP

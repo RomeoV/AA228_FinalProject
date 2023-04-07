@@ -126,7 +126,7 @@ function value_iteration(mdp::DroneSurveillanceMDP, T_model::DSConformalizedMode
             U[s] = maximum(a->let r = reward(mdp, s, a),
                                   γ = mdp.discount_factor,
                                   C_T = DroneSurveillance.transition(mdp, T_model, s, a);
-                               r + γ * conformal_expectation(U_, C_T)
+                               r + γ * conformal_expectation_2(s->U_[s], C_T)
                            end,
                            ACTION_DIRS)
         end
@@ -149,8 +149,8 @@ end
 function runtime_policy(mdp, T_model::DSConformalizedModel, U, s)
     _, a_idx = findmax(a->let r = reward(mdp, s, a),
                               γ = mdp.discount_factor,
-                              Δs_pred = DroneSurveillance.transition(mdp, T_model, s, a);
-                           r + γ * conformal_expectation(U, Δs_pred)
+                              s_pred = DroneSurveillance.transition(mdp, T_model, s, a);
+                           r + γ * conformal_expectation_2(s->U[s], s_pred)
                        end,
                        ACTION_DIRS)
     return ACTION_DIRS[a_idx]

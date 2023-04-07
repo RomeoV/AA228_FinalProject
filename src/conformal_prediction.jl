@@ -10,7 +10,6 @@ import Integrals: IntegralProblem, QuadGKJL, solve
 import IntervalSets: AbstractInterval, Interval, width
 import IntervalSets: (..)
 import DataStructures: SortedDict
-import Base.Order: Ordering
 
 function conformalize_λs(mdp, T_model, history, λs)::Array{<:Real}
     n_calib = length(history)
@@ -55,7 +54,7 @@ function conformal_expectation(U::AbstractDict{DSState, <:Real}, C_T::SortedDict
         λs)
 end
 # set version
-function conformal_expectation(g::Function, C_T::AbstractDict{<:Real, <:Interval})
+function conformal_expectation(g::Function, C_T::SortedDict{<:Real, <:Interval})
     # return 0 if prediction set is empty
     integrate_(f, interval::Interval) = (interval.left >= interval.right ? 0 :
         solve(IntegralProblem((x, p)->f(x), interval.left, interval.right),
@@ -69,8 +68,8 @@ end
 
 #### Variant 2
 # expectation without g
-conformal_expectation_2(C_T::Union{SortedDict{<:Real, <:Interval, <:Ordering},
-                                   SortedDict{<:Real, <:Set, <:Ordering}}) =
+conformal_expectation_2(C_T::Union{SortedDict{<:Real, <:Interval},
+                                   SortedDict{<:Real, <:Set}}) =
     conformal_expectation_2(identity, C_T)
 
 # set version
@@ -82,14 +81,14 @@ function conformal_expectation_2(g::Function, C_T::SortedDict{<:Real, Set{DSStat
     ws = diff(λs)
     λ_pairs = zip(λs[1:end-1], λs[2:end])
     sum(((λ_lo, λ_hi),) -> begin
-            X_λ± = setdiff(C_T[λ_hi], C_T[λ_lo])
-            (λ_hi-λ_lo) * mean_(g, X_λ±) / 2
+            X_λpm = setdiff(C_T[λ_hi], C_T[λ_lo])
+            (λ_hi-λ_lo) * mean_(g, X_λpm) / 2
         end,
         λ_pairs) * 1/maximum(λs)
 end
 
 # 1D interval version
-function conformal_expectation_2(g::Function, C_T::SortedDict{<:Real, <:Interval, <:Ordering})
+function conformal_expectation_2(g::Function, C_T::SortedDict{<:Real, <:Interval})
     # return 0 if prediction set is empty
     mean_(f, interval::Interval) = (interval.left >= interval.right ? 0 :
         solve(IntegralProblem((x, p)->f(x), interval.left, interval.right),
@@ -107,7 +106,7 @@ function conformal_expectation_2(g::Function, C_T::SortedDict{<:Real, <:Interval
 end
 
 #### Variant 3
-function conformal_expectation_3(U::AbstractDict{DSState, <:Real}, C_T::SortedDict{<:Real, Set{DSState}, <:Ordering})
+function conformal_expectation_3(U::AbstractDict{DSState, <:Real}, C_T::SortedDict{<:Real, Set{DSState}})
     # return 0 if prediction set is empty
     mean_(f, set::Set) = (set == Set() ? 0 : mean(f, set))
 

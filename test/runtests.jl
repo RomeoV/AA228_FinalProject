@@ -6,6 +6,8 @@ using Random
 using IntervalSets
 import DataStructures: SortedDict
 import Integrals: IntegralProblem, QuadGKJL, solve
+import Expectations: expectation
+import LegibleLambdas: @λ
 
 function lhs_pred_set(D, p)
     -inf..quantile(D, p/2)
@@ -25,31 +27,13 @@ Ds = (
     Beta(2.5, 0.5)
 )
 
-@testset "Test centered pred set" begin
-    Random.seed!(1)
-    for _ in 1:3
-        μ = 10*rand()
-        σ = abs(10*rand())
-        D = Normal(μ, σ)
-        λs = 0.05:0.05:0.95
-        for λ in λs
-            @test mean(centered_pred_set(D, λ)) ≈ μ atol=sqrt(eps())
-        end
-    end
-end
-
-@testset "Test centered pred set" begin
-    Random.seed!(1)
-    for _ in 1:3
-        μ = 10*rand()
-        σ = abs(10*rand())
-        D = Normal(μ, σ)
-        λs = 0.05:0.05:0.95
-        for λ in λs
-            @test mean(centered_pred_set(D, λ)) ≈ μ atol=sqrt(eps())
-        end
-    end
-end
+gs = (
+    identity,
+    @λ(x->x^2),
+    @λ(x->x-x^2),
+    # @λ(x->x^3-x^2),
+    # @λ(x->log(abs(x))),
+)
 
 @testset "Test centered pred set" begin
     Random.seed!(1)
@@ -72,8 +56,8 @@ end
         μ = 10*rand()
         σ = abs(10*rand())
         D = Normal(μ, σ)
-        λs = 0.05:0.05:0.95
-        C_T = SortedDict(
+        λs::Vector{Float64} = 0.05:0.05:0.95
+        C_T = SortedDict{Float64, ClosedInterval}(
             λ => centered_pred_set(D, λ)
             for λ in λs
         )
@@ -84,14 +68,15 @@ end
 @testset "Conformal Expectation 2 Tests" begin
     Random.seed!(1)
     # TODO: distributions where mode and mean/expectation do not coincide.
-    for D in Ds[1:1]
-        @show D
-        λs = 0.05:0.05:0.95
+    for D in Ds, g in gs
+        @show D, g
+        E_D = expectation(D)
+        λs = [LinRange(0//1, 1//1, 31)[1:end-1] ; 0.99 ; 0.999]
         C_T = SortedDict{Float64, ClosedInterval}(
             λ => centered_pred_set(D, λ)
             for λ in λs
         )
-        @test AA.conformal_expectation_2(identity, C_T) ≈ mean(D) atol=sqrt(eps())
+        @test AA.conformal_expectation_2(g, C_T) ≈ E_D(g) rtol=1e-2
     end
 end
 
@@ -131,3 +116,5 @@ end
     end
     return
 end
+
+include("test_eval.jl")
