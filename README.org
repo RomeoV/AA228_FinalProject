@@ -1,0 +1,42 @@
+* Calibrating Black-Box Transition Models For MDP Planning Using Conformal Prediction
+
+#+begin_quote
+In this paper, we study the application of Conformal Prediction to the calibration of black-box transition models for
+planning in a Markov Decision Process setting. Successful deployment of this method frees us from having to make
+distributional assumptions on the underlying problem, which
+often leads to poor calibration, and can provide statistical
+guarantees, particularly relevant for safety-critical applications.
+Drawing inspiration from Composite Quantile Regression, we propose an alternative formulation of the Bellman equation, to be used with existing algorithms such as
+value iteration. Also, we show that we can tighten the approximation error arbitrarily tightly. Using our experimen-
+tal setup, we find that policies based on our method have the
+ability to outperform other strategies, and the temperature
+scaling recalibration technique. Specifically, our method
+consistently achieves a higher discounted reward, and is more
+robust against a shift in the underlying distribution.
+#+end_quote
+Find the full report [[report.pdf][here]].
+
+*** TLDR: Rewriting Bellman Equation using "Conformalized" Model.
+Consider the Bellman equation
+#+begin_src math
+U(s) = \max_a \left( R(s, a) + \gamma \mathbb{E}_{s' \sim T(s' \mid s, a)} U(s') \right).
+#+end_src
+In this project, we consider miscalibrated transition models
+#+begin_src math
+T: \mathcal{S} \times \mathcal{A} \rightarrow [0, 1]^{S},
+#+end_src
+conformalize them as
+#+begin_src math
+\mathcal{C}_\lambda (T): \mathcal{S} \times \mathcal{A} \times [0, 1] \rightarrow \mathcal{P}(\mathcal{S}),
+#+end_src
+and then propose appropriate ways to compute the expectations, e.g.
+#+begin_src math
+\mathbb{E}_{x \sim f_X} g(x) \approx \sum_{\lambda \in \Lambda} \left( w_\lambda \cdot \mathit{mean}_{x \in [\mathcal{C}_\lambda \circ f_X]} g(x) \right).
+#+end_src
+*** TLDR: Results on the DroneSurveillance MDP.
+:PROPERTIES:
+:DIR:      ~/Documents/Stanford/AA228/final_project/AA228_FinalProject/figs/
+:END:
+We vary problem difficulty, and domain shift wrt the data the planner was trained on.
+#+attr_org: :width 400
+[[file:figs/results.png]]
